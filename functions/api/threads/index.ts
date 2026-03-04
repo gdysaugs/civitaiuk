@@ -49,6 +49,7 @@ type CreateThreadPayload = {
 
 const DEFAULT_THREAD_THUMB_PATH = "/default-thread-thumb.webp";
 const RAPID_POST_THRESHOLD = 5;
+const THREAD_CREATE_COOLDOWN_MINUTES = 3;
 
 function resolveThreadThumbnailUrl(
   requestUrl: string,
@@ -190,6 +191,28 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   }
   const sanctionRequiresTurnstile =
     Number(sanction?.requireTurnstile || 0) === 1 && Boolean(env.TURNSTILE_SECRET?.trim());
+
+  const recentThreadByPoster = await env.DB.prepare(
+    `SELECT p.id
+     FROM posts p
+     WHERE p.poster_id = ?1
+       AND datetime(p.created_at) >= datetime('now', ?2)
+       AND NOT EXISTS (
+         SELECT 1
+         FROM posts p2
+         WHERE p2.thread_id = p.thread_id
+           AND p2.id < p.id
+       )
+     LIMIT 1`
+  )
+    .bind(posterId, `-${THREAD_CREATE_COOLDOWN_MINUTES} minutes`)
+    .first<{ id: number }>();
+  if (recentThreadByPoster) {
+    return json(
+      { error: `スレッド作成は${THREAD_CREATE_COOLDOWN_MINUTES}分に1回までです。しばらく待ってください。` },
+      429
+    );
+  }
 
   const recentByPoster = await env.DB.prepare(
     `SELECT COUNT(*) AS recentCount
