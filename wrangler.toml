@@ -1,0 +1,12 @@
+name = "civitaiuk"
+compatibility_date = "2026-03-04"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "civitaiuk"
+database_id = "7ae0d58d-d7d5-4e21-98e4-f1358738403f"
+migrations_dir = "migrations"
+
+[vars]
+APP_NAME = "civitai.uk"

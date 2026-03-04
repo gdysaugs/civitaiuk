@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>civitai.uk board</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>civitai.uk</h1>
+        <p class="subtitle">AI image and video board</p>
+      </div>
+      <div class="topbar-actions">
+        <label class="switch">
+          <input id="nsfwToggle" type="checkbox" />
+          <span>Show NSFW</span>
+        </label>
+        <button id="refreshBtn" class="btn">Refresh</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel list-panel">
+        <div class="panel-head">
+          <h2>Updated Threads</h2>
+        </div>
+
+        <form id="threadForm" class="form card">
+          <h3>Create Thread</h3>
+          <label>Title <input name="title" required minlength="3" maxlength="120" /></label>
+          <label>Author <input name="authorName" maxlength="40" placeholder="anonymous" /></label>
+          <label>Model <input name="modelName" maxlength="80" placeholder="e.g. ponyXL" /></label>
+          <label>Media Type
+            <select name="mediaType">
+              <option value="image">image</option>
+              <option value="video">video</option>
+              <option value="mixed">mixed</option>
+            </select>
+          </label>
+          <label class="switch inline"><input name="nsfw" type="checkbox" /><span>NSFW</span></label>
+          <label>Body <textarea name="body" required maxlength="5000"></textarea></label>
+          <label>Media URL <input name="mediaUrl" maxlength="2000" placeholder="https://..." /></label>
+          <label>Prompt <textarea name="prompt" maxlength="4000"></textarea></label>
+          <button class="btn primary" type="submit">Post Thread</button>
+        </form>
+
+        <div id="threads" class="thread-list"></div>
+      </section>
+
+      <section class="panel detail-panel">
+        <div class="panel-head">
+          <h2>Thread Detail</h2>
+          <p id="activeThreadMeta" class="meta">Select a thread</p>
+        </div>
+
+        <div id="threadDetail" class="card empty">No thread selected.</div>
+
+        <form id="replyForm" class="form card hidden">
+          <h3>Reply</h3>
+          <input type="hidden" name="threadId" />
+          <label>Author <input name="authorName" maxlength="40" placeholder="anonymous" /></label>
+          <label class="switch inline"><input name="nsfw" type="checkbox" /><span>NSFW</span></label>
+          <label>Body <textarea name="body" required maxlength="5000"></textarea></label>
+          <label>Media URL <input name="mediaUrl" maxlength="2000" placeholder="https://..." /></label>
+          <label>Prompt <textarea name="prompt" maxlength="4000"></textarea></label>
+          <button class="btn primary" type="submit">Post Reply</button>
+        </form>
+      </section>
+    </main>
+
+    <template id="threadItemTemplate">
+      <button class="thread-item" type="button">
+        <div class="row">
+          <strong class="title"></strong>
+          <span class="badge type"></span>
+        </div>
+        <div class="row meta">
+          <span class="model"></span>
+          <span class="count"></span>
+          <span class="updated"></span>
+        </div>
+      </button>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
