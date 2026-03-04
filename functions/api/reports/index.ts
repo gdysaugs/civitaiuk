@@ -1,13 +1,19 @@
 import { requireAdmin, verifyTurnstile } from "../../_security";
-import { sendDiscordWebhook } from "../../_discord";
-import { cleanLongText, cleanText, json, parseLimit, parseOptionalInt, readJson } from "../../_utils";
+import {
+  buildPosterId,
+  cleanLongText,
+  cleanText,
+  json,
+  parseLimit,
+  parseOptionalInt,
+  readJson
+} from "../../_utils";
 
 type Env = {
   DB: D1Database;
   TURNSTILE_SECRET?: string;
   TURNSTILE_REQUIRED?: string;
   ADMIN_TOKEN?: string;
-  DISCORD_WEBHOOK_URL?: string;
 };
 
 type CreateReportPayload = {
@@ -28,67 +34,6 @@ const REPORT_REASONS = new Set([
   "other"
 ]);
 
-const REPORT_REASON_LABELS: Record<string, string> = {
-  illegal: "Illegal content",
-  copyright: "Copyright violation",
-  "non-consensual": "Non-consensual content",
-  "minor-suspected": "Minor suspected",
-  harassment: "Harassment",
-  spam: "Spam",
-  other: "Other"
-};
-
-function toReasonLabel(reason: string): string {
-  return REPORT_REASON_LABELS[reason] ?? reason;
-}
-
-function truncate(value: string | null, max: number): string {
-  if (!value) return "-";
-  if (value.length <= max) return value;
-  return `${value.slice(0, max - 3)}...`;
-}
-
-async function notifyReportCreated(
-  env: Env,
-  request: Request,
-  data: {
-    reportId: number;
-    threadId: number | null;
-    postId: number | null;
-    reason: string;
-    details: string | null;
-  }
-): Promise<void> {
-  const origin = new URL(request.url).origin;
-  const threadLink = data.threadId ? `${origin}/thread/${data.threadId}` : "";
-  const postLink = data.threadId && data.postId ? `${threadLink}#post-${data.postId}` : threadLink;
-  const contentLines = [
-    `New report #${data.reportId}`,
-    `reason: ${toReasonLabel(data.reason)}`,
-    `thread: ${data.threadId ?? "-"}`,
-    `post: ${data.postId ?? "-"}`
-  ];
-
-  await sendDiscordWebhook(env, {
-    content: contentLines.join(" | "),
-    embeds: [
-      {
-        title: `Report #${data.reportId}`,
-        color: 15158332,
-        url: postLink || undefined,
-        timestamp: new Date().toISOString(),
-        fields: [
-          { name: "Reason", value: toReasonLabel(data.reason), inline: true },
-          { name: "Thread ID", value: String(data.threadId ?? "-"), inline: true },
-          { name: "Post ID", value: String(data.postId ?? "-"), inline: true },
-          { name: "Details", value: truncate(data.details, 500), inline: false },
-          { name: "Link", value: postLink || "-", inline: false }
-        ]
-      }
-    ]
-  });
-}
-
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   const unauthorized = requireAdmin(request, env);
   if (unauthorized) return unauthorized;
@@ -102,6 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
        r.id,
        r.thread_id AS threadId,
        r.post_id AS postId,
+       r.reporter_id AS reporterId,
        r.reason,
        r.details,
        r.status,
@@ -138,6 +84,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   const turnstile = await verifyTurnstile(request, env, payload.turnstileToken);
   if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
 
+  const reporterId = await buildPosterId(request);
+
   let resolvedThreadId = threadId ?? null;
   let resolvedPostId = postId ?? null;
 
@@ -150,6 +98,35 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
       .bind(resolvedPostId)
       .first<{ id: number; threadId: number }>();
     if (!post) return json({ error: "Post not found." }, 404);
+
+    const latestReport = await env.DB.prepare(
+      `SELECT id
+       FROM reports
+       WHERE post_id = ?1
+         AND reporter_id = ?2
+         AND datetime(created_at) > datetime('now', '-2 minutes')
+       ORDER BY datetime(created_at) DESC
+       LIMIT 1`
+    )
+      .bind(resolvedPostId, reporterId)
+      .first();
+    if (latestReport) {
+      return json({ error: "この投稿は2分に1回まで通報できます。" }, 429);
+    }
+
+    const alreadyReported = await env.DB.prepare(
+      `SELECT id
+       FROM reports
+       WHERE post_id = ?1
+         AND reporter_id = ?2
+         AND datetime(created_at) >= datetime('now', '-1 day')
+       LIMIT 1`
+    )
+      .bind(resolvedPostId, reporterId)
+      .first();
+    if (alreadyReported) {
+      return json({ error: "この投稿はすでに通報済みです。" }, 409);
+    }
     resolvedThreadId = resolvedThreadId ?? post.threadId;
   }
 
@@ -164,30 +141,88 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
     if (!thread) return json({ error: "Thread not found." }, 404);
   }
 
+  if (!resolvedPostId && resolvedThreadId) {
+    const latestThreadReport = await env.DB.prepare(
+      `SELECT id
+       FROM reports
+       WHERE thread_id = ?1
+         AND post_id IS NULL
+         AND reporter_id = ?2
+         AND datetime(created_at) > datetime('now', '-2 minutes')
+       ORDER BY datetime(created_at) DESC
+       LIMIT 1`
+    )
+      .bind(resolvedThreadId, reporterId)
+      .first();
+    if (latestThreadReport) {
+      return json({ error: "このスレッドは2分に1回まで通報できます。" }, 429);
+    }
+
+    const alreadyReportedThread = await env.DB.prepare(
+      `SELECT id
+       FROM reports
+       WHERE thread_id = ?1
+         AND post_id IS NULL
+         AND reporter_id = ?2
+         AND datetime(created_at) >= datetime('now', '-1 day')
+       LIMIT 1`
+    )
+      .bind(resolvedThreadId, reporterId)
+      .first();
+    if (alreadyReportedThread) {
+      return json({ error: "このスレッドはすでに通報済みです。" }, 409);
+    }
+  }
+
   const created = await env.DB.prepare(
-    `INSERT INTO reports (thread_id, post_id, reason, details)
-     VALUES (?1, ?2, ?3, ?4)`
+    `INSERT INTO reports (thread_id, post_id, reporter_id, reason, details)
+     VALUES (?1, ?2, ?3, ?4, ?5)`
   )
-    .bind(resolvedThreadId, resolvedPostId, reason, details)
+    .bind(resolvedThreadId, resolvedPostId, reporterId, reason, details)
     .run();
 
-  const reportId = Number(created.meta.last_row_id);
-  await notifyReportCreated(env, request, {
-    reportId,
-    threadId: resolvedThreadId,
-    postId: resolvedPostId,
-    reason,
-    details
-  });
+  let uniqueReporterCount = 0;
+  let autoDeleted = false;
+
+  if (resolvedPostId) {
+    const countRow = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT reporter_id) AS uniqueReporterCount
+       FROM reports
+       WHERE post_id = ?1
+         AND reporter_id IS NOT NULL
+         AND datetime(created_at) >= datetime('now', '-1 day')`
+    )
+      .bind(resolvedPostId)
+      .first<{ uniqueReporterCount: number }>();
+
+    uniqueReporterCount = Number(countRow?.uniqueReporterCount || 0);
+
+    if (uniqueReporterCount >= 10) {
+      const updated = await env.DB.prepare(
+        `UPDATE posts
+         SET is_deleted = 1
+         WHERE id = ?1
+           AND is_deleted = 0`
+      )
+        .bind(resolvedPostId)
+        .run();
+      autoDeleted = Number(updated.meta.changes || 0) > 0;
+    }
+  }
 
   return json(
     {
       report: {
-        id: reportId,
+        id: Number(created.meta.last_row_id),
         threadId: resolvedThreadId,
         postId: resolvedPostId,
+        reporterId,
         reason,
         status: "open"
+      },
+      moderation: {
+        uniqueReporterCount,
+        autoDeleted
       }
     },
     201
