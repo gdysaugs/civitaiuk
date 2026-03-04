@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>通報フォーム | AIちゃんねる</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="/favicon.webp" type="image/webp" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand brand-link" href="/">
+        <h1>AIちゃんねる</h1>
+        <p>AI画像専用の掲示板サイト</p>
+      </a>
+      <div class="header-actions">
+        <a href="/terms" class="btn ghost">利用規約</a>
+        <a href="/" class="btn">一覧へ戻る</a>
+      </div>
+    </header>
+
+    <main class="app-layout single">
+      <section class="detail-column">
+        <form id="contactReportForm" class="composer card">
+          <h3>通報フォーム</h3>
+          <input
+            name="title"
+            type="text"
+            maxlength="120"
+            placeholder="通報タイトル（例: 違法コンテンツの疑い）"
+            required
+          />
+          <textarea
+            name="content"
+            maxlength="4000"
+            placeholder="通報内容を具体的に記入してください"
+            required
+          ></textarea>
+          <div id="reportTurnstileSlot" class="turnstile-slot hidden"></div>
+          <div class="composer-actions">
+            <button id="contactReportSubmitBtn" class="btn primary" type="submit">送信</button>
+          </div>
+        </form>
+
+        <section id="contactReportMessage" class="card report-message hidden"></section>
+      </section>
+    </main>
+
+    <script type="module" src="/report.js"></script>
+  </body>
+</html>

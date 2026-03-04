@@ -11,4 +11,12 @@ migrations_dir = "migrations"
 [vars]
 APP_NAME = "civitai.uk"
 TURNSTILE_REQUIRED = "0"
-MAX_UPLOAD_BYTES = "26214400"
+MAX_UPLOAD_BYTES = "83886080"
+REPORT_CONTACT_TO = "mane795134@gmail.com"
+REPORT_CONTACT_FROM = "noreply@civitai.uk"
+REPORT_CONTACT_PROVIDER = "mailchannels"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "civitaiuk-media"
+preview_bucket_name = "civitaiuk-media"

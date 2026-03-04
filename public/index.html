@@ -3,129 +3,50 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>civitai.uk board</title>
+    <title>AIちゃんねる</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="/favicon.webp" type="image/webp" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div>
-        <h1>civitai.uk</h1>
-        <p class="subtitle">AI画像・動画 特化掲示板</p>
-        <p id="runtimeInfo" class="runtime-info"></p>
-      </div>
-      <div class="topbar-actions">
-        <nav class="legal-links">
-          <a href="/guidelines.html">Guidelines</a>
-          <a href="/terms.html">Terms</a>
-          <a href="/privacy.html">Privacy</a>
-          <a href="/admin.html">Admin</a>
-        </nav>
-        <label class="switch">
-          <input id="nsfwToggle" type="checkbox" />
-          <span>Show NSFW</span>
-        </label>
-        <button id="refreshBtn" class="btn">Refresh</button>
+    <header class="app-header">
+      <a class="brand brand-link" href="/">
+        <h1>AIちゃんねる</h1>
+        <p>AI画像専用の掲示板サイト</p>
+      </a>
+      <div class="header-actions">
+        <a href="/report" class="btn ghost">通報</a>
+        <a href="/terms" class="btn ghost">利用規約</a>
+        <a href="/new" class="btn primary">スレッド作成</a>
       </div>
     </header>
 
-    <main class="layout">
-      <section class="panel list-panel">
-        <div class="panel-head">
-          <h2>Updated Threads</h2>
-        </div>
-
-        <form id="threadForm" class="form card">
-          <h3>Create Thread</h3>
-          <label>Title <input name="title" required minlength="3" maxlength="120" /></label>
-          <label>Author <input name="authorName" maxlength="40" placeholder="anonymous" /></label>
-          <label>Model <input name="modelName" maxlength="80" placeholder="e.g. ponyXL" /></label>
-          <label>Media Type
-            <select name="mediaType">
-              <option value="image">image</option>
-              <option value="video">video</option>
-              <option value="mixed">mixed</option>
-            </select>
-          </label>
-          <label class="switch inline"><input name="nsfw" type="checkbox" /><span>NSFW</span></label>
-          <label>Body <textarea name="body" required maxlength="5000"></textarea></label>
-          <label>Media URL <input name="mediaUrl" maxlength="2000" placeholder="https://..." /></label>
-          <div class="upload-row">
-            <input name="mediaFile" type="file" accept="image/*,video/*" />
-            <button class="btn upload-btn" type="button" data-upload-for="thread">Upload File</button>
-          </div>
-          <input name="mediaMime" type="hidden" />
-          <label>Prompt <textarea name="prompt" maxlength="4000"></textarea></label>
-          <div class="turnstile-slot" data-turnstile="thread"></div>
-          <button class="btn primary" type="submit">Post Thread</button>
-        </form>
-
-        <div id="threads" class="thread-list"></div>
-      </section>
-
-      <section class="panel detail-panel">
-        <div class="panel-head">
-          <h2>Thread Detail</h2>
-          <div class="detail-head-right">
-            <p id="activeThreadMeta" class="meta">Select a thread</p>
-            <button id="reportThreadBtn" type="button" class="btn danger hidden">Report Thread</button>
-          </div>
-        </div>
-
-        <div id="threadDetail" class="card empty">No thread selected.</div>
-
-        <form id="replyForm" class="form card hidden">
-          <h3>Reply</h3>
-          <input type="hidden" name="threadId" />
-          <label>Author <input name="authorName" maxlength="40" placeholder="anonymous" /></label>
-          <label class="switch inline"><input name="nsfw" type="checkbox" /><span>NSFW</span></label>
-          <label>Body <textarea name="body" required maxlength="5000"></textarea></label>
-          <label>Media URL <input name="mediaUrl" maxlength="2000" placeholder="https://..." /></label>
-          <div class="upload-row">
-            <input name="mediaFile" type="file" accept="image/*,video/*" />
-            <button class="btn upload-btn" type="button" data-upload-for="reply">Upload File</button>
-          </div>
-          <input name="mediaMime" type="hidden" />
-          <label>Prompt <textarea name="prompt" maxlength="4000"></textarea></label>
-          <div class="turnstile-slot" data-turnstile="reply"></div>
-          <button class="btn primary" type="submit">Post Reply</button>
-        </form>
-
-        <form id="reportForm" class="form card hidden">
-          <h3>Report</h3>
-          <input type="hidden" name="threadId" />
-          <input type="hidden" name="postId" />
-          <p id="reportTarget" class="meta"></p>
-          <label>Reason
-            <select name="reason">
-              <option value="illegal">illegal</option>
-              <option value="copyright">copyright</option>
-              <option value="non-consensual">non-consensual</option>
-              <option value="minor-suspected">minor-suspected</option>
-              <option value="harassment">harassment</option>
-              <option value="spam">spam</option>
-              <option value="other">other</option>
-            </select>
-          </label>
-          <label>Details <textarea name="details" maxlength="2000"></textarea></label>
-          <div class="turnstile-slot" data-turnstile="report"></div>
-          <div class="report-actions">
-            <button class="btn danger" type="submit">Send Report</button>
-            <button id="cancelReportBtn" class="btn" type="button">Cancel</button>
-          </div>
-        </form>
+    <main class="list-layout">
+      <section class="feed-column">
+        <section class="feed-head card">
+          <h2>スレッド一覧</h2>
+          <p class="muted">更新順</p>
+        </section>
+        <div id="threads" class="feed-list"></div>
+        <nav id="threadPager" class="pagination-nav list-pagination hidden" aria-label="スレッドページ移動"></nav>
       </section>
     </main>
 
     <template id="threadItemTemplate">
-      <button class="thread-item" type="button">
-        <div class="row">
-          <strong class="title"></strong>
-          <span class="badge type"></span>
-        </div>
-        <div class="row meta">
-          <span class="model"></span>
-          <span class="count"></span>
-          <span class="updated"></span>
+      <button class="feed-item" type="button">
+        <div class="feed-item-row">
+          <div class="thread-thumb"></div>
+          <div class="feed-main">
+            <p class="feed-title"></p>
+            <div class="feed-meta">
+              <span class="updated"></span>
+            </div>
+          </div>
         </div>
       </button>
     </template>
