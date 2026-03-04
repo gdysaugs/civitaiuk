@@ -10,3 +10,5 @@ migrations_dir = "migrations"
 
 [vars]
 APP_NAME = "civitai.uk"
+TURNSTILE_REQUIRED = "0"
+MAX_UPLOAD_BYTES = "26214400"

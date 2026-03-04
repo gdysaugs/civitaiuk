@@ -34,6 +34,18 @@ function cleanLongText(value, maxLen) {
   return normalized.length > maxLen ? normalized.slice(0, maxLen) : normalized;
 }
 __name(cleanLongText, "cleanLongText");
+function cleanUrl(value, maxLen) {
+  const input = cleanText(value, maxLen);
+  if (!input) return null;
+  try {
+    const parsed = new URL(input);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+__name(cleanUrl, "cleanUrl");
 function parseBool(value) {
   if (value === true || value === 1 || value === "1" || value === "on") return 1;
   return 0;
@@ -68,36 +80,275 @@ function validateMediaType(value) {
   return "image";
 }
 __name(validateMediaType, "validateMediaType");
+function parseEnvBool(value, fallback = false) {
+  if (value === void 0) return fallback;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+__name(parseEnvBool, "parseEnvBool");
+function clampNumber(value, min, max) {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+__name(clampNumber, "clampNumber");
+
+// _security.ts
+var TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+function readClientIp(request) {
+  const cfIp = request.headers.get("cf-connecting-ip");
+  if (cfIp) return cfIp.trim();
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (!forwarded) return "";
+  const first = forwarded.split(",")[0];
+  return first ? first.trim() : "";
+}
+__name(readClientIp, "readClientIp");
+function isTurnstileRequired(env) {
+  return parseEnvBool(env.TURNSTILE_REQUIRED, false);
+}
+__name(isTurnstileRequired, "isTurnstileRequired");
+async function verifyTurnstile(request, env, token) {
+  const secret = env.TURNSTILE_SECRET?.trim();
+  const required = isTurnstileRequired(env);
+  if (!secret) {
+    if (required) {
+      return { ok: false, error: "Turnstile required but TURNSTILE_SECRET is not configured." };
+    }
+    return { ok: true };
+  }
+  const normalizedToken = token?.trim();
+  if (!normalizedToken) return { ok: false, error: "Turnstile token is missing." };
+  const body = new URLSearchParams();
+  body.set("secret", secret);
+  body.set("response", normalizedToken);
+  const clientIp = readClientIp(request);
+  if (clientIp) body.set("remoteip", clientIp);
+  try {
+    const response = await fetch(TURNSTILE_VERIFY_URL, {
+      method: "POST",
+      body
+    });
+    if (!response.ok) {
+      return { ok: false, error: "Turnstile verification request failed." };
+    }
+    const result = await response.json();
+    if (result.success) return { ok: true };
+    return { ok: false, error: "Turnstile verification failed." };
+  } catch {
+    return { ok: false, error: "Turnstile verification failed." };
+  }
+}
+__name(verifyTurnstile, "verifyTurnstile");
+function readBearerToken(request) {
+  const auth = request.headers.get("authorization");
+  if (!auth) return null;
+  const [scheme, token] = auth.split(/\s+/, 2);
+  if (!scheme || !token) return null;
+  if (scheme.toLowerCase() !== "bearer") return null;
+  return token.trim();
+}
+__name(readBearerToken, "readBearerToken");
+function requireAdmin(request, env) {
+  const expected = env.ADMIN_TOKEN?.trim();
+  if (!expected) {
+    return json({ error: "Admin API is not configured." }, 503);
+  }
+  const provided = request.headers.get("x-admin-token")?.trim() ?? readBearerToken(request) ?? "";
+  if (!provided || provided !== expected) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  return null;
+}
+__name(requireAdmin, "requireAdmin");
+
+// api/mod/reports/[id]/resolve.ts
+var onRequestPost = /* @__PURE__ */ __name(async ({ env, request, params }) => {
+  const unauthorized = requireAdmin(request, env);
+  if (unauthorized) return unauthorized;
+  const reportId = Number(params.id);
+  if (!Number.isInteger(reportId) || reportId <= 0) return json({ error: "Invalid report id." }, 400);
+  const payload = await readJson(request);
+  if (!payload) return json({ error: "Invalid JSON body." }, 400);
+  const action = cleanText(payload.action, 30) ?? "resolve_only";
+  const note = cleanLongText(payload.note, 1200);
+  const validAction = /* @__PURE__ */ new Set(["resolve_only", "delete_post", "delete_thread", "lock_thread", "reject"]);
+  if (!validAction.has(action)) return json({ error: "Invalid action." }, 400);
+  const report = await env.DB.prepare(
+    `SELECT id, thread_id AS threadId, post_id AS postId, status
+     FROM reports
+     WHERE id = ?1`
+  ).bind(reportId).first();
+  if (!report) return json({ error: "Report not found." }, 404);
+  if (report.status !== "open") return json({ error: "Report is already resolved." }, 409);
+  let threadTarget = report.threadId;
+  if (!threadTarget && report.postId) {
+    const postThread = await env.DB.prepare(
+      `SELECT thread_id AS threadId
+       FROM posts
+       WHERE id = ?1`
+    ).bind(report.postId).first();
+    threadTarget = postThread?.threadId ?? null;
+  }
+  if (action === "delete_post") {
+    if (!report.postId) return json({ error: "Report has no post target." }, 400);
+    await env.DB.prepare("UPDATE posts SET is_deleted = 1 WHERE id = ?1").bind(report.postId).run();
+  }
+  if (action === "delete_thread") {
+    if (!threadTarget) return json({ error: "Report has no thread target." }, 400);
+    await env.DB.prepare("UPDATE threads SET is_deleted = 1, is_locked = 1 WHERE id = ?1").bind(threadTarget).run();
+  }
+  if (action === "lock_thread") {
+    if (!threadTarget) return json({ error: "Report has no thread target." }, 400);
+    await env.DB.prepare("UPDATE threads SET is_locked = 1 WHERE id = ?1").bind(threadTarget).run();
+  }
+  const resolvedStatus = action === "reject" ? "rejected" : "resolved";
+  await env.DB.prepare(
+    `UPDATE reports
+     SET status = ?1,
+         resolution_action = ?2,
+         resolution_note = ?3,
+         resolved_by = ?4,
+         resolved_at = CURRENT_TIMESTAMP
+     WHERE id = ?5`
+  ).bind(resolvedStatus, action, note, "admin", reportId).run();
+  return json({
+    ok: true,
+    reportId,
+    status: resolvedStatus,
+    action
+  });
+}, "onRequestPost");
+
+// api/media/object.ts
+var onRequestGet = /* @__PURE__ */ __name(async ({ env, request }) => {
+  if (!env.MEDIA) return json({ error: "R2 bucket binding MEDIA is not configured." }, 503);
+  const key = new URL(request.url).searchParams.get("key")?.trim();
+  if (!key) return json({ error: "key is required." }, 400);
+  if (key.includes("..")) return json({ error: "Invalid key." }, 400);
+  const object = await env.MEDIA.get(key);
+  if (!object) return json({ error: "Object not found." }, 404);
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("cache-control", headers.get("cache-control") ?? "public, max-age=31536000, immutable");
+  return new Response(object.body, { headers });
+}, "onRequestGet");
+
+// api/media/upload.ts
+function sanitizeFilename(name) {
+  const base = name.trim().toLowerCase();
+  const safe = base.replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-");
+  return safe.slice(0, 120) || "file.bin";
+}
+__name(sanitizeFilename, "sanitizeFilename");
+function createObjectKey(filename) {
+  const now = /* @__PURE__ */ new Date();
+  const yyyy = now.getUTCFullYear();
+  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(now.getUTCDate()).padStart(2, "0");
+  return `uploads/${yyyy}/${mm}/${dd}/${crypto.randomUUID()}-${sanitizeFilename(filename)}`;
+}
+__name(createObjectKey, "createObjectKey");
+function resolveMediaUrl(baseUrl, key) {
+  const base = baseUrl?.trim();
+  if (base) return `${base.replace(/\/+$/, "")}/${key}`;
+  return `/api/media/object?key=${encodeURIComponent(key)}`;
+}
+__name(resolveMediaUrl, "resolveMediaUrl");
+var onRequestPost2 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  if (!env.MEDIA) return json({ error: "R2 bucket binding MEDIA is not configured." }, 503);
+  const maxUploadCandidate = parseOptionalInt(env.MAX_UPLOAD_BYTES);
+  const maxUploadBytes = clampNumber(maxUploadCandidate ?? 25 * 1024 * 1024, 1024, 500 * 1024 * 1024);
+  let form;
+  try {
+    form = await request.formData();
+  } catch {
+    return json({ error: "Invalid multipart form data." }, 400);
+  }
+  const token = form.get("turnstileToken");
+  const tokenText = typeof token === "string" ? token : token?.toString();
+  if (isTurnstileRequired(env) || tokenText?.trim()) {
+    const turnstile = await verifyTurnstile(request, env, tokenText);
+    if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
+  }
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    return json({ error: "file is required." }, 400);
+  }
+  if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+    return json({ error: "Only image/video files are allowed." }, 400);
+  }
+  if (file.size <= 0) {
+    return json({ error: "Empty file is not allowed." }, 400);
+  }
+  if (file.size > maxUploadBytes) {
+    return json({ error: `File is too large. Max ${maxUploadBytes} bytes.` }, 413);
+  }
+  const key = createObjectKey(file.name || "upload.bin");
+  const bytes = await file.arrayBuffer();
+  await env.MEDIA.put(key, bytes, {
+    httpMetadata: {
+      contentType: file.type || "application/octet-stream",
+      cacheControl: "public, max-age=31536000, immutable"
+    }
+  });
+  return json(
+    {
+      key,
+      mediaUrl: resolveMediaUrl(env.R2_PUBLIC_BASE_URL, key),
+      mimeType: file.type || "application/octet-stream",
+      size: file.size
+    },
+    201
+  );
+}, "onRequestPost");
 
 // api/threads/[id].ts
-var onRequestGet = /* @__PURE__ */ __name(async ({ env, params, request }) => {
+var onRequestGet2 = /* @__PURE__ */ __name(async ({ env, params, request }) => {
   const threadId = Number(params.id);
   if (!Number.isInteger(threadId) || threadId <= 0) return json({ error: "Invalid thread id." }, 400);
   const includeNsfw = new URL(request.url).searchParams.get("nsfw") === "include" ? 1 : 0;
   const limit = parseLimit(new URL(request.url).searchParams.get("postLimit"), 200, 1, 500);
   const thread = await env.DB.prepare(
     `SELECT id, title, author_name AS authorName, model_name AS modelName,
-            media_type AS mediaType, nsfw, created_at AS createdAt, updated_at AS updatedAt
+            media_type AS mediaType, nsfw, is_locked AS isLocked,
+            created_at AS createdAt, updated_at AS updatedAt
      FROM threads
-     WHERE id = ?1 AND (?2 = 1 OR nsfw = 0)`
+     WHERE id = ?1 AND is_deleted = 0 AND (?2 = 1 OR nsfw = 0)`
   ).bind(threadId, includeNsfw).first();
   if (!thread) return json({ error: "Thread not found." }, 404);
   const { results: posts } = await env.DB.prepare(
     `SELECT id, thread_id AS threadId, body, prompt, workflow_json AS workflowJson,
             media_url AS mediaUrl, thumbnail_url AS thumbnailUrl,
+            media_mime AS mediaMime,
             seed, sampler, steps, cfg_scale AS cfgScale,
             width, height, author_name AS authorName, nsfw,
             created_at AS createdAt
      FROM posts
-     WHERE thread_id = ?1
+     WHERE thread_id = ?1 AND is_deleted = 0
      ORDER BY datetime(created_at) ASC
      LIMIT ?2`
   ).bind(threadId, limit).all();
   return json({ thread, posts, postLimit: limit, includeNsfw: includeNsfw === 1 });
 }, "onRequestGet");
 
+// api/config.ts
+var onRequestGet3 = /* @__PURE__ */ __name(async ({ env }) => {
+  const maxUploadCandidate = parseOptionalInt(env.MAX_UPLOAD_BYTES);
+  const maxUploadBytes = maxUploadCandidate && maxUploadCandidate > 0 ? maxUploadCandidate : 25 * 1024 * 1024;
+  return json({
+    appName: env.APP_NAME ?? "civitai.uk",
+    turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
+    turnstileRequired: isTurnstileRequired(env),
+    uploadsEnabled: Boolean(env.MEDIA),
+    publicMediaBaseUrl: env.R2_PUBLIC_BASE_URL ?? null,
+    maxUploadBytes
+  });
+}, "onRequestGet");
+
 // api/health.ts
-var onRequestGet2 = /* @__PURE__ */ __name(async ({ env }) => {
+var onRequestGet4 = /* @__PURE__ */ __name(async ({ env }) => {
   try {
     const result = await env.DB.prepare("SELECT 1 as ok").first();
     return json({ ok: true, db: result?.ok === 1 });
@@ -107,15 +358,15 @@ var onRequestGet2 = /* @__PURE__ */ __name(async ({ env }) => {
 }, "onRequestGet");
 
 // api/posts/index.ts
-var onRequestPost = /* @__PURE__ */ __name(async ({ env, request }) => {
+var onRequestPost3 = /* @__PURE__ */ __name(async ({ env, request }) => {
   const payload = await readJson(request);
   if (!payload) return json({ error: "Invalid JSON body." }, 400);
   const threadId = parseOptionalInt(payload.threadId);
   const body = cleanLongText(payload.body, 5e3);
   const authorName = cleanText(payload.authorName ?? "anonymous", 40) ?? "anonymous";
   const nsfw = parseBool(payload.nsfw);
-  const mediaUrl = cleanText(payload.mediaUrl, 2e3);
-  const thumbnailUrl = cleanText(payload.thumbnailUrl, 2e3);
+  const mediaUrl = cleanUrl(payload.mediaUrl, 2e3);
+  const thumbnailUrl = cleanUrl(payload.thumbnailUrl, 2e3);
   const prompt = cleanLongText(payload.prompt, 4e3);
   const workflowJson = cleanLongText(payload.workflowJson, 2e4);
   const seed = parseOptionalInt(payload.seed);
@@ -124,15 +375,27 @@ var onRequestPost = /* @__PURE__ */ __name(async ({ env, request }) => {
   const cfgScale = parseOptionalFloat(payload.cfgScale);
   const width = parseOptionalInt(payload.width);
   const height = parseOptionalInt(payload.height);
+  const mediaMime = cleanText(payload.mediaMime, 120);
   if (!threadId || threadId <= 0) return json({ error: "Valid threadId is required." }, 400);
   if (!body) return json({ error: "Body is required." }, 400);
-  const thread = await env.DB.prepare(`SELECT id FROM threads WHERE id = ?1`).bind(threadId).first();
+  if (payload.mediaUrl && !mediaUrl) return json({ error: "mediaUrl must be a valid http/https URL." }, 400);
+  if (payload.thumbnailUrl && !thumbnailUrl) {
+    return json({ error: "thumbnailUrl must be a valid http/https URL." }, 400);
+  }
+  const turnstile = await verifyTurnstile(request, env, payload.turnstileToken);
+  if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
+  const thread = await env.DB.prepare(
+    `SELECT id, is_locked AS isLocked
+     FROM threads
+     WHERE id = ?1 AND is_deleted = 0`
+  ).bind(threadId).first();
   if (!thread) return json({ error: "Thread not found." }, 404);
+  if (thread.isLocked === 1) return json({ error: "Thread is locked." }, 403);
   const result = await env.DB.prepare(
     `INSERT INTO posts (
       thread_id, body, prompt, workflow_json, media_url, thumbnail_url,
-      seed, sampler, steps, cfg_scale, width, height, author_name, nsfw
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`
+      media_mime, seed, sampler, steps, cfg_scale, width, height, author_name, nsfw
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`
   ).bind(
     threadId,
     body,
@@ -140,6 +403,7 @@ var onRequestPost = /* @__PURE__ */ __name(async ({ env, request }) => {
     workflowJson,
     mediaUrl,
     thumbnailUrl,
+    mediaMime,
     seed,
     sampler,
     steps,
@@ -152,7 +416,8 @@ var onRequestPost = /* @__PURE__ */ __name(async ({ env, request }) => {
   const postId = Number(result.meta.last_row_id);
   const created = await env.DB.prepare(
     `SELECT id, thread_id AS threadId, body, prompt, workflow_json AS workflowJson,
-            media_url AS mediaUrl, thumbnail_url AS thumbnailUrl, seed, sampler,
+            media_url AS mediaUrl, thumbnail_url AS thumbnailUrl, media_mime AS mediaMime,
+            seed, sampler,
             steps, cfg_scale AS cfgScale, width, height, author_name AS authorName,
             nsfw, created_at AS createdAt
      FROM posts
@@ -161,8 +426,94 @@ var onRequestPost = /* @__PURE__ */ __name(async ({ env, request }) => {
   return json({ post: created }, 201);
 }, "onRequestPost");
 
+// api/reports/index.ts
+var REPORT_REASONS = /* @__PURE__ */ new Set([
+  "illegal",
+  "copyright",
+  "non-consensual",
+  "minor-suspected",
+  "harassment",
+  "spam",
+  "other"
+]);
+var onRequestGet5 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  const unauthorized = requireAdmin(request, env);
+  if (unauthorized) return unauthorized;
+  const url = new URL(request.url);
+  const status = cleanText(url.searchParams.get("status"), 20) ?? "open";
+  const limit = parseLimit(url.searchParams.get("limit"), 100, 1, 500);
+  const { results } = await env.DB.prepare(
+    `SELECT
+       r.id,
+       r.thread_id AS threadId,
+       r.post_id AS postId,
+       r.reason,
+       r.details,
+       r.status,
+       r.resolution_action AS resolutionAction,
+       r.resolution_note AS resolutionNote,
+       r.resolved_by AS resolvedBy,
+       r.resolved_at AS resolvedAt,
+       r.created_at AS createdAt,
+       t.title AS threadTitle
+     FROM reports r
+     LEFT JOIN threads t ON t.id = r.thread_id
+     WHERE (?1 = 'all' OR r.status = ?1)
+     ORDER BY datetime(r.created_at) DESC
+     LIMIT ?2`
+  ).bind(status, limit).all();
+  return json({ reports: results, status, limit });
+}, "onRequestGet");
+var onRequestPost4 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  const payload = await readJson(request);
+  if (!payload) return json({ error: "Invalid JSON body." }, 400);
+  const threadId = parseOptionalInt(payload.threadId);
+  const postId = parseOptionalInt(payload.postId);
+  const reason = cleanText(payload.reason, 40);
+  const details = cleanLongText(payload.details, 2e3);
+  if (!threadId && !postId) return json({ error: "threadId or postId is required." }, 400);
+  if (!reason || !REPORT_REASONS.has(reason)) return json({ error: "Invalid reason." }, 400);
+  const turnstile = await verifyTurnstile(request, env, payload.turnstileToken);
+  if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
+  let resolvedThreadId = threadId ?? null;
+  let resolvedPostId = postId ?? null;
+  if (resolvedPostId) {
+    const post = await env.DB.prepare(
+      `SELECT id, thread_id AS threadId
+       FROM posts
+       WHERE id = ?1 AND is_deleted = 0`
+    ).bind(resolvedPostId).first();
+    if (!post) return json({ error: "Post not found." }, 404);
+    resolvedThreadId = resolvedThreadId ?? post.threadId;
+  }
+  if (resolvedThreadId) {
+    const thread = await env.DB.prepare(
+      `SELECT id
+       FROM threads
+       WHERE id = ?1 AND is_deleted = 0`
+    ).bind(resolvedThreadId).first();
+    if (!thread) return json({ error: "Thread not found." }, 404);
+  }
+  const created = await env.DB.prepare(
+    `INSERT INTO reports (thread_id, post_id, reason, details)
+     VALUES (?1, ?2, ?3, ?4)`
+  ).bind(resolvedThreadId, resolvedPostId, reason, details).run();
+  return json(
+    {
+      report: {
+        id: Number(created.meta.last_row_id),
+        threadId: resolvedThreadId,
+        postId: resolvedPostId,
+        reason,
+        status: "open"
+      }
+    },
+    201
+  );
+}, "onRequestPost");
+
 // api/threads/index.ts
-var onRequestGet3 = /* @__PURE__ */ __name(async ({ env, request }) => {
+var onRequestGet6 = /* @__PURE__ */ __name(async ({ env, request }) => {
   const url = new URL(request.url);
   const limit = parseLimit(url.searchParams.get("limit"));
   const includeNsfw = url.searchParams.get("nsfw") === "include" ? 1 : 0;
@@ -174,12 +525,14 @@ var onRequestGet3 = /* @__PURE__ */ __name(async ({ env, request }) => {
       t.model_name AS modelName,
       t.media_type AS mediaType,
       t.nsfw,
+      t.is_locked AS isLocked,
       t.created_at AS createdAt,
       t.updated_at AS updatedAt,
-      COUNT(p.id) AS postCount
+      COUNT(CASE WHEN p.is_deleted = 0 THEN p.id END) AS postCount
     FROM threads t
     LEFT JOIN posts p ON p.thread_id = t.id
-    WHERE (?1 = 1 OR t.nsfw = 0)
+    WHERE t.is_deleted = 0
+      AND (?1 = 1 OR t.nsfw = 0)
     GROUP BY t.id
     ORDER BY datetime(t.updated_at) DESC
     LIMIT ?2
@@ -187,7 +540,7 @@ var onRequestGet3 = /* @__PURE__ */ __name(async ({ env, request }) => {
   const { results } = await env.DB.prepare(query).bind(includeNsfw, limit).all();
   return json({ threads: results, limit, includeNsfw: includeNsfw === 1 });
 }, "onRequestGet");
-var onRequestPost2 = /* @__PURE__ */ __name(async ({ env, request }) => {
+var onRequestPost5 = /* @__PURE__ */ __name(async ({ env, request }) => {
   const payload = await readJson(request);
   if (!payload) return json({ error: "Invalid JSON body." }, 400);
   const title = cleanText(payload.title, 120);
@@ -196,8 +549,8 @@ var onRequestPost2 = /* @__PURE__ */ __name(async ({ env, request }) => {
   const modelName = cleanText(payload.modelName, 80);
   const mediaType = validateMediaType(payload.mediaType);
   const nsfw = parseBool(payload.nsfw);
-  const mediaUrl = cleanText(payload.mediaUrl, 2e3);
-  const thumbnailUrl = cleanText(payload.thumbnailUrl, 2e3);
+  const mediaUrl = cleanUrl(payload.mediaUrl, 2e3);
+  const thumbnailUrl = cleanUrl(payload.thumbnailUrl, 2e3);
   const prompt = cleanLongText(payload.prompt, 4e3);
   const workflowJson = cleanLongText(payload.workflowJson, 2e4);
   const seed = parseOptionalInt(payload.seed);
@@ -206,8 +559,15 @@ var onRequestPost2 = /* @__PURE__ */ __name(async ({ env, request }) => {
   const cfgScale = parseOptionalFloat(payload.cfgScale);
   const width = parseOptionalInt(payload.width);
   const height = parseOptionalInt(payload.height);
+  const mediaMime = cleanText(payload.mediaMime, 120);
   if (!title || title.length < 3) return json({ error: "Title must be at least 3 chars." }, 400);
   if (!body) return json({ error: "Body is required." }, 400);
+  if (payload.mediaUrl && !mediaUrl) return json({ error: "mediaUrl must be a valid http/https URL." }, 400);
+  if (payload.thumbnailUrl && !thumbnailUrl) {
+    return json({ error: "thumbnailUrl must be a valid http/https URL." }, 400);
+  }
+  const turnstile = await verifyTurnstile(request, env, payload.turnstileToken);
+  if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
   const threadResult = await env.DB.prepare(
     `INSERT INTO threads (title, author_name, model_name, media_type, nsfw)
      VALUES (?1, ?2, ?3, ?4, ?5)`
@@ -216,8 +576,8 @@ var onRequestPost2 = /* @__PURE__ */ __name(async ({ env, request }) => {
   await env.DB.prepare(
     `INSERT INTO posts (
       thread_id, body, prompt, workflow_json, media_url, thumbnail_url,
-      seed, sampler, steps, cfg_scale, width, height, author_name, nsfw
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`
+      media_mime, seed, sampler, steps, cfg_scale, width, height, author_name, nsfw
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`
   ).bind(
     threadId,
     body,
@@ -225,6 +585,7 @@ var onRequestPost2 = /* @__PURE__ */ __name(async ({ env, request }) => {
     workflowJson,
     mediaUrl,
     thumbnailUrl,
+    mediaMime,
     seed,
     sampler,
     steps,
@@ -236,7 +597,8 @@ var onRequestPost2 = /* @__PURE__ */ __name(async ({ env, request }) => {
   ).run();
   const created = await env.DB.prepare(
     `SELECT id, title, author_name AS authorName, model_name AS modelName,
-            media_type AS mediaType, nsfw, created_at AS createdAt, updated_at AS updatedAt
+            media_type AS mediaType, nsfw, is_locked AS isLocked,
+            created_at AS createdAt, updated_at AS updatedAt
      FROM threads
      WHERE id = ?1`
   ).bind(threadId).first();
@@ -260,42 +622,84 @@ var onRequest = /* @__PURE__ */ __name(async (context) => {
   });
 }, "onRequest");
 
-// ../.wrangler/tmp/pages-UsALwv/functionsRoutes-0.9164543238157076.mjs
+// ../.wrangler/tmp/pages-BYNm33/functionsRoutes-0.0992369177588247.mjs
 var routes = [
+  {
+    routePath: "/api/mod/reports/:id/resolve",
+    mountPath: "/api/mod/reports/:id",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost]
+  },
+  {
+    routePath: "/api/media/object",
+    mountPath: "/api/media",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet]
+  },
+  {
+    routePath: "/api/media/upload",
+    mountPath: "/api/media",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost2]
+  },
   {
     routePath: "/api/threads/:id",
     mountPath: "/api/threads",
     method: "GET",
     middlewares: [],
-    modules: [onRequestGet]
+    modules: [onRequestGet2]
+  },
+  {
+    routePath: "/api/config",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet3]
   },
   {
     routePath: "/api/health",
     mountPath: "/api",
     method: "GET",
     middlewares: [],
-    modules: [onRequestGet2]
+    modules: [onRequestGet4]
   },
   {
     routePath: "/api/posts",
     mountPath: "/api/posts",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost]
+    modules: [onRequestPost3]
+  },
+  {
+    routePath: "/api/reports",
+    mountPath: "/api/reports",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet5]
+  },
+  {
+    routePath: "/api/reports",
+    mountPath: "/api/reports",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost4]
   },
   {
     routePath: "/api/threads",
     mountPath: "/api/threads",
     method: "GET",
     middlewares: [],
-    modules: [onRequestGet3]
+    modules: [onRequestGet6]
   },
   {
     routePath: "/api/threads",
     mountPath: "/api/threads",
     method: "POST",
     middlewares: [],
-    modules: [onRequestPost2]
+    modules: [onRequestPost5]
   },
   {
     routePath: "/",

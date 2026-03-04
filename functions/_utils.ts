@@ -30,6 +30,18 @@ export function cleanLongText(value: unknown, maxLen: number): string | null {
   return normalized.length > maxLen ? normalized.slice(0, maxLen) : normalized;
 }
 
+export function cleanUrl(value: unknown, maxLen: number): string | null {
+  const input = cleanText(value, maxLen);
+  if (!input) return null;
+  try {
+    const parsed = new URL(input);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function parseBool(value: unknown): number {
   if (value === true || value === 1 || value === "1" || value === "on") return 1;
   return 0;
@@ -62,4 +74,16 @@ export function parseLimit(value: string | null, fallback = 50, min = 1, max = 2
 export function validateMediaType(value: unknown): "image" | "video" | "mixed" {
   if (value === "video" || value === "mixed") return value;
   return "image";
+}
+
+export function parseEnvBool(value: string | undefined, fallback = false): boolean {
+  if (value === undefined) return fallback;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+export function clampNumber(value: number, min: number, max: number): number {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
 }

@@ -1,6 +1,7 @@
 import {
   cleanLongText,
   cleanText,
+  cleanUrl,
   json,
   parseBool,
   parseLimit,
@@ -9,9 +10,12 @@ import {
   readJson,
   validateMediaType
 } from "../../_utils";
+import { verifyTurnstile } from "../../_security";
 
 type Env = {
   DB: D1Database;
+  TURNSTILE_SECRET?: string;
+  TURNSTILE_REQUIRED?: string;
 };
 
 type CreateThreadPayload = {
@@ -31,6 +35,8 @@ type CreateThreadPayload = {
   cfgScale?: number;
   width?: number;
   height?: number;
+  mediaMime?: string;
+  turnstileToken?: string;
 };
 
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
@@ -46,12 +52,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
       t.model_name AS modelName,
       t.media_type AS mediaType,
       t.nsfw,
+      t.is_locked AS isLocked,
       t.created_at AS createdAt,
       t.updated_at AS updatedAt,
-      COUNT(p.id) AS postCount
+      COUNT(CASE WHEN p.is_deleted = 0 THEN p.id END) AS postCount
     FROM threads t
     LEFT JOIN posts p ON p.thread_id = t.id
-    WHERE (?1 = 1 OR t.nsfw = 0)
+    WHERE t.is_deleted = 0
+      AND (?1 = 1 OR t.nsfw = 0)
     GROUP BY t.id
     ORDER BY datetime(t.updated_at) DESC
     LIMIT ?2
@@ -72,8 +80,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   const mediaType = validateMediaType(payload.mediaType);
   const nsfw = parseBool(payload.nsfw);
 
-  const mediaUrl = cleanText(payload.mediaUrl, 2000);
-  const thumbnailUrl = cleanText(payload.thumbnailUrl, 2000);
+  const mediaUrl = cleanUrl(payload.mediaUrl, 2000);
+  const thumbnailUrl = cleanUrl(payload.thumbnailUrl, 2000);
   const prompt = cleanLongText(payload.prompt, 4000);
   const workflowJson = cleanLongText(payload.workflowJson, 20000);
   const seed = parseOptionalInt(payload.seed);
@@ -82,9 +90,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   const cfgScale = parseOptionalFloat(payload.cfgScale);
   const width = parseOptionalInt(payload.width);
   const height = parseOptionalInt(payload.height);
+  const mediaMime = cleanText(payload.mediaMime, 120);
 
   if (!title || title.length < 3) return json({ error: "Title must be at least 3 chars." }, 400);
   if (!body) return json({ error: "Body is required." }, 400);
+  if (payload.mediaUrl && !mediaUrl) return json({ error: "mediaUrl must be a valid http/https URL." }, 400);
+  if (payload.thumbnailUrl && !thumbnailUrl) {
+    return json({ error: "thumbnailUrl must be a valid http/https URL." }, 400);
+  }
+
+  const turnstile = await verifyTurnstile(request, env, payload.turnstileToken);
+  if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
 
   const threadResult = await env.DB.prepare(
     `INSERT INTO threads (title, author_name, model_name, media_type, nsfw)
@@ -98,8 +114,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   await env.DB.prepare(
     `INSERT INTO posts (
       thread_id, body, prompt, workflow_json, media_url, thumbnail_url,
-      seed, sampler, steps, cfg_scale, width, height, author_name, nsfw
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`
+      media_mime, seed, sampler, steps, cfg_scale, width, height, author_name, nsfw
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`
   )
     .bind(
       threadId,
@@ -108,6 +124,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
       workflowJson,
       mediaUrl,
       thumbnailUrl,
+      mediaMime,
       seed,
       sampler,
       steps,
@@ -121,7 +138,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
 
   const created = await env.DB.prepare(
     `SELECT id, title, author_name AS authorName, model_name AS modelName,
-            media_type AS mediaType, nsfw, created_at AS createdAt, updated_at AS updatedAt
+            media_type AS mediaType, nsfw, is_locked AS isLocked,
+            created_at AS createdAt, updated_at AS updatedAt
      FROM threads
      WHERE id = ?1`
   )

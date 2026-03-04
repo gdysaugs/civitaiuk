@@ -13,9 +13,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params, request })
 
   const thread = await env.DB.prepare(
     `SELECT id, title, author_name AS authorName, model_name AS modelName,
-            media_type AS mediaType, nsfw, created_at AS createdAt, updated_at AS updatedAt
+            media_type AS mediaType, nsfw, is_locked AS isLocked,
+            created_at AS createdAt, updated_at AS updatedAt
      FROM threads
-     WHERE id = ?1 AND (?2 = 1 OR nsfw = 0)`
+     WHERE id = ?1 AND is_deleted = 0 AND (?2 = 1 OR nsfw = 0)`
   )
     .bind(threadId, includeNsfw)
     .first();
@@ -25,11 +26,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params, request })
   const { results: posts } = await env.DB.prepare(
     `SELECT id, thread_id AS threadId, body, prompt, workflow_json AS workflowJson,
             media_url AS mediaUrl, thumbnail_url AS thumbnailUrl,
+            media_mime AS mediaMime,
             seed, sampler, steps, cfg_scale AS cfgScale,
             width, height, author_name AS authorName, nsfw,
             created_at AS createdAt
      FROM posts
-     WHERE thread_id = ?1
+     WHERE thread_id = ?1 AND is_deleted = 0
      ORDER BY datetime(created_at) ASC
      LIMIT ?2`
   )

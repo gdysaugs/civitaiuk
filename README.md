@@ -1,73 +1,100 @@
-# civitai.uk board (Cloudflare Pages MVP)
+# civitai.uk board
 
-This is a starter project for an AI image/video board deployed on Cloudflare Pages.
+Cloudflare Pages + Functions + D1 + (optional) R2 で動く、AI画像/動画特化掲示板です。
 
-## Stack
+## 実装済み機能
 
-- Cloudflare Pages (static frontend + Functions)
-- Cloudflare D1 (threads/posts metadata)
-- Optional Cloudflare R2 for media files (store URL in posts.media_url)
+- 更新順スレ一覧 / スレ詳細 / レス投稿
+- NSFW表示トグル
+- 通報API（理由付き）+ 管理者向け通報一覧/解決API
+- Turnstile検証（投稿・返信・通報）
+- R2メディアアップロードAPI（任意）
+- Terms / Privacy / Guidelines ページ
 
-## Directory
+## ディレクトリ
 
-- `public/` : frontend
-- `functions/` : Pages Functions API
-- `migrations/` : D1 schema
+- `public/` フロントエンド
+- `functions/` Pages Functions API
+- `migrations/` D1マイグレーション
 
-## Setup
-
-1. Install dependencies:
+## ローカル開発
 
 ```bash
 npm install
+npm run db:migrate:local
+npm run dev
 ```
 
-2. Create D1 database:
+## Cloudflare セットアップ
+
+1. D1を作成（作成済みなら不要）
 
 ```bash
 npx wrangler d1 create civitaiuk
 ```
 
-3. Put returned `database_id` into `wrangler.toml`.
+2. `wrangler.toml` の `database_id` を更新
 
-4. Apply migrations locally:
-
-```bash
-npm run db:migrate:local
-```
-
-5. Run local dev server:
-
-```bash
-npm run dev
-```
-
-## Cloudflare Pages deploy
-
-1. Push this directory to `https://github.com/gdysaugs/civitaiuk`.
-2. In Cloudflare dashboard, create a Pages project from that repo.
-3. Build command: none
-4. Build output directory: `public`
-5. Add D1 binding:
-   - Variable name: `DB`
-   - Database: `civitaiuk`
-6. Run remote migration:
+3. リモートマイグレーション
 
 ```bash
 npm run db:migrate:remote
 ```
 
+4. Pagesにデプロイ
+
+```bash
+npx wrangler pages deploy public --project-name civitaiuk --branch main
+```
+
+## Pages 側の設定
+
+Pagesプロジェクト `civitaiuk` に以下を設定してください。
+
+1. D1 Binding
+- Name: `DB`
+- Database: `civitaiuk`
+
+2. Variables
+- `APP_NAME` (例: `civitai.uk`)
+- `TURNSTILE_REQUIRED` (`1` 推奨 / 開発中は `0` 可)
+- `MAX_UPLOAD_BYTES` (例: `26214400`)
+- `TURNSTILE_SITE_KEY` (公開キー)
+
+3. Secrets
+- `TURNSTILE_SECRET`
+- `ADMIN_TOKEN` (モデレーションAPI用)
+
+4. Optional: R2 Binding
+- Name: `MEDIA`
+- Bucket: 任意（例: `civitaiuk-media`）
+
+5. Optional: Variable
+- `R2_PUBLIC_BASE_URL`（公開配信ドメインを使う場合）
+
 ## API
 
+- `GET /api/health`
+- `GET /api/config`
 - `GET /api/threads`
 - `POST /api/threads`
 - `GET /api/threads/:id`
 - `POST /api/posts`
-- `GET /api/health`
+- `POST /api/media/upload`
+- `GET /api/media/object?key=...`
+- `POST /api/reports`
+- `GET /api/reports` (admin)
+- `POST /api/mod/reports/:id/resolve` (admin)
 
-## Important next steps
+## 管理API認証
 
-- Add Turnstile verification for posting
-- Add report + moderation workflow
-- Add R2 direct upload + signed URL
-- Add legal policy pages and abuse handling flow
+`x-admin-token: <ADMIN_TOKEN>` か `Authorization: Bearer <ADMIN_TOKEN>` を付与してください。
+
+管理画面は `/admin` です。`ADMIN_TOKEN` を入力して通報一覧・解決操作を実行できます。
+
+## 本番前チェック
+
+1. Turnstileを有効化 (`TURNSTILE_REQUIRED=1`)
+2. `ADMIN_TOKEN` を強固なランダム値に設定
+3. 禁止コンテンツポリシー（未成年/非同意/違法）を明記
+4. 通報対応フロー（SLA、対応優先度）を運用に落とし込む

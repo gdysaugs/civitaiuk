@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,9 +10,16 @@
     <header class="topbar">
       <div>
         <h1>civitai.uk</h1>
-        <p class="subtitle">AI image and video board</p>
+        <p class="subtitle">AI画像・動画 特化掲示板</p>
+        <p id="runtimeInfo" class="runtime-info"></p>
       </div>
       <div class="topbar-actions">
+        <nav class="legal-links">
+          <a href="/guidelines.html">Guidelines</a>
+          <a href="/terms.html">Terms</a>
+          <a href="/privacy.html">Privacy</a>
+          <a href="/admin.html">Admin</a>
+        </nav>
         <label class="switch">
           <input id="nsfwToggle" type="checkbox" />
           <span>Show NSFW</span>
@@ -42,7 +49,13 @@
           <label class="switch inline"><input name="nsfw" type="checkbox" /><span>NSFW</span></label>
           <label>Body <textarea name="body" required maxlength="5000"></textarea></label>
           <label>Media URL <input name="mediaUrl" maxlength="2000" placeholder="https://..." /></label>
+          <div class="upload-row">
+            <input name="mediaFile" type="file" accept="image/*,video/*" />
+            <button class="btn upload-btn" type="button" data-upload-for="thread">Upload File</button>
+          </div>
+          <input name="mediaMime" type="hidden" />
           <label>Prompt <textarea name="prompt" maxlength="4000"></textarea></label>
+          <div class="turnstile-slot" data-turnstile="thread"></div>
           <button class="btn primary" type="submit">Post Thread</button>
         </form>
 
@@ -52,7 +65,10 @@
       <section class="panel detail-panel">
         <div class="panel-head">
           <h2>Thread Detail</h2>
-          <p id="activeThreadMeta" class="meta">Select a thread</p>
+          <div class="detail-head-right">
+            <p id="activeThreadMeta" class="meta">Select a thread</p>
+            <button id="reportThreadBtn" type="button" class="btn danger hidden">Report Thread</button>
+          </div>
         </div>
 
         <div id="threadDetail" class="card empty">No thread selected.</div>
@@ -64,8 +80,38 @@
           <label class="switch inline"><input name="nsfw" type="checkbox" /><span>NSFW</span></label>
           <label>Body <textarea name="body" required maxlength="5000"></textarea></label>
           <label>Media URL <input name="mediaUrl" maxlength="2000" placeholder="https://..." /></label>
+          <div class="upload-row">
+            <input name="mediaFile" type="file" accept="image/*,video/*" />
+            <button class="btn upload-btn" type="button" data-upload-for="reply">Upload File</button>
+          </div>
+          <input name="mediaMime" type="hidden" />
           <label>Prompt <textarea name="prompt" maxlength="4000"></textarea></label>
+          <div class="turnstile-slot" data-turnstile="reply"></div>
           <button class="btn primary" type="submit">Post Reply</button>
+        </form>
+
+        <form id="reportForm" class="form card hidden">
+          <h3>Report</h3>
+          <input type="hidden" name="threadId" />
+          <input type="hidden" name="postId" />
+          <p id="reportTarget" class="meta"></p>
+          <label>Reason
+            <select name="reason">
+              <option value="illegal">illegal</option>
+              <option value="copyright">copyright</option>
+              <option value="non-consensual">non-consensual</option>
+              <option value="minor-suspected">minor-suspected</option>
+              <option value="harassment">harassment</option>
+              <option value="spam">spam</option>
+              <option value="other">other</option>
+            </select>
+          </label>
+          <label>Details <textarea name="details" maxlength="2000"></textarea></label>
+          <div class="turnstile-slot" data-turnstile="report"></div>
+          <div class="report-actions">
+            <button class="btn danger" type="submit">Send Report</button>
+            <button id="cancelReportBtn" class="btn" type="button">Cancel</button>
+          </div>
         </form>
       </section>
     </main>
