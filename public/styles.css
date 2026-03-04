@@ -98,6 +98,8 @@ a.btn {
 .page-footer-actions {
   display: flex;
   justify-content: center;
+  align-items: center;
+  width: 100%;
   gap: 0.5rem;
 }
 
@@ -1079,6 +1081,22 @@ input[type="text"]:focus {
     white-space: nowrap;
     padding: 0.34rem 0.62rem;
     font-size: 0.76rem;
+  }
+
+  .page-footer {
+    padding: 0 0.55rem 0.85rem;
+  }
+
+  .page-footer-actions {
+    justify-content: center;
+    gap: 0.34rem;
+  }
+
+  .page-footer-actions .btn {
+    padding: 0.26rem 0.56rem;
+    font-size: 0.72rem;
+    border-radius: 999px;
+    white-space: nowrap;
   }
 
   .thread-page {
