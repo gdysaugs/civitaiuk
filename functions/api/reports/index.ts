@@ -33,6 +33,8 @@ const REPORT_REASONS = new Set([
   "spam",
   "other"
 ]);
+const GLOBAL_REPORT_WINDOW_MINUTES = 10;
+const GLOBAL_REPORT_LIMIT = 20;
 
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   const unauthorized = requireAdmin(request, env);
@@ -85,6 +87,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
 
   const reporterId = await buildPosterId(request);
+  const globalRate = await env.DB.prepare(
+    `SELECT COUNT(*) AS recentCount
+     FROM reports
+     WHERE reporter_id = ?1
+       AND datetime(created_at) >= datetime('now', ?2)`
+  )
+    .bind(reporterId, `-${GLOBAL_REPORT_WINDOW_MINUTES} minutes`)
+    .first<{ recentCount: number }>();
+  const recentReportCount = Number(globalRate?.recentCount || 0);
+  if (recentReportCount >= GLOBAL_REPORT_LIMIT) {
+    return json(
+      { error: `通報が多すぎます。${GLOBAL_REPORT_WINDOW_MINUTES}分ほど待ってから再度お試しください。` },
+      429
+    );
+  }
 
   let resolvedThreadId = threadId ?? null;
   let resolvedPostId = postId ?? null;

@@ -9,7 +9,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params, request })
   if (!Number.isInteger(threadId) || threadId <= 0) return json({ error: "Invalid thread id." }, 400);
 
   const includeNsfw = new URL(request.url).searchParams.get("nsfw") === "include" ? 1 : 0;
-  const limit = parseLimit(new URL(request.url).searchParams.get("postLimit"), 200, 1, 500);
+  const limit = parseLimit(new URL(request.url).searchParams.get("postLimit"), 200, 1, 1000);
 
   const thread = await env.DB.prepare(
     `SELECT id, title, author_name AS authorName, model_name AS modelName,
@@ -28,7 +28,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params, request })
             media_url AS mediaUrl, thumbnail_url AS thumbnailUrl,
             media_mime AS mediaMime,
             seed, sampler, steps, cfg_scale AS cfgScale,
-            width, height, author_name AS authorName, nsfw,
+            width, height, author_name AS authorName, poster_id AS posterId, nsfw,
             created_at AS createdAt
      FROM posts
      WHERE thread_id = ?1 AND is_deleted = 0
