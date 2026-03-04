@@ -123,7 +123,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   return json({ reports: results, status, limit });
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ env, request, waitUntil }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   const payload = await readJson<CreateReportPayload>(request);
   if (!payload) return json({ error: "Invalid JSON body." }, 400);
 
@@ -172,15 +172,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request, waitUnti
     .run();
 
   const reportId = Number(created.meta.last_row_id);
-  waitUntil(
-    notifyReportCreated(env, request, {
-      reportId,
-      threadId: resolvedThreadId,
-      postId: resolvedPostId,
-      reason,
-      details
-    })
-  );
+  await notifyReportCreated(env, request, {
+    reportId,
+    threadId: resolvedThreadId,
+    postId: resolvedPostId,
+    reason,
+    details
+  });
 
   return json(
     {
