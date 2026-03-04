@@ -1,4 +1,5 @@
 import { requireAdmin, verifyTurnstile } from "../../_security";
+import { sendDiscordWebhook } from "../../_discord";
 import { cleanLongText, cleanText, json, parseLimit, parseOptionalInt, readJson } from "../../_utils";
 
 type Env = {
@@ -6,6 +7,7 @@ type Env = {
   TURNSTILE_SECRET?: string;
   TURNSTILE_REQUIRED?: string;
   ADMIN_TOKEN?: string;
+  DISCORD_WEBHOOK_URL?: string;
 };
 
 type CreateReportPayload = {
@@ -25,6 +27,67 @@ const REPORT_REASONS = new Set([
   "spam",
   "other"
 ]);
+
+const REPORT_REASON_LABELS: Record<string, string> = {
+  illegal: "Illegal content",
+  copyright: "Copyright violation",
+  "non-consensual": "Non-consensual content",
+  "minor-suspected": "Minor suspected",
+  harassment: "Harassment",
+  spam: "Spam",
+  other: "Other"
+};
+
+function toReasonLabel(reason: string): string {
+  return REPORT_REASON_LABELS[reason] ?? reason;
+}
+
+function truncate(value: string | null, max: number): string {
+  if (!value) return "-";
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 3)}...`;
+}
+
+async function notifyReportCreated(
+  env: Env,
+  request: Request,
+  data: {
+    reportId: number;
+    threadId: number | null;
+    postId: number | null;
+    reason: string;
+    details: string | null;
+  }
+): Promise<void> {
+  const origin = new URL(request.url).origin;
+  const threadLink = data.threadId ? `${origin}/thread/${data.threadId}` : "";
+  const postLink = data.threadId && data.postId ? `${threadLink}#post-${data.postId}` : threadLink;
+  const contentLines = [
+    `New report #${data.reportId}`,
+    `reason: ${toReasonLabel(data.reason)}`,
+    `thread: ${data.threadId ?? "-"}`,
+    `post: ${data.postId ?? "-"}`
+  ];
+
+  await sendDiscordWebhook(env, {
+    content: contentLines.join(" | "),
+    embeds: [
+      {
+        title: `Report #${data.reportId}`,
+        color: 15158332,
+        url: postLink || undefined,
+        timestamp: new Date().toISOString(),
+        fields: [
+          { name: "Reason", value: toReasonLabel(data.reason), inline: true },
+          { name: "Thread ID", value: String(data.threadId ?? "-"), inline: true },
+          { name: "Post ID", value: String(data.postId ?? "-"), inline: true },
+          { name: "Details", value: truncate(data.details, 500), inline: false },
+          { name: "Link", value: postLink || "-", inline: false }
+        ]
+      }
+    ]
+  });
+}
 
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   const unauthorized = requireAdmin(request, env);
@@ -60,7 +123,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   return json({ reports: results, status, limit });
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ env, request, waitUntil }) => {
   const payload = await readJson<CreateReportPayload>(request);
   if (!payload) return json({ error: "Invalid JSON body." }, 400);
 
@@ -108,10 +171,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
     .bind(resolvedThreadId, resolvedPostId, reason, details)
     .run();
 
+  const reportId = Number(created.meta.last_row_id);
+  waitUntil(
+    notifyReportCreated(env, request, {
+      reportId,
+      threadId: resolvedThreadId,
+      postId: resolvedPostId,
+      reason,
+      details
+    })
+  );
+
   return json(
     {
       report: {
-        id: Number(created.meta.last_row_id),
+        id: reportId,
         threadId: resolvedThreadId,
         postId: resolvedPostId,
         reason,

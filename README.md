@@ -98,3 +98,15 @@ Pagesプロジェクト `civitaiuk` に以下を設定してください。
 2. `ADMIN_TOKEN` を強固なランダム値に設定
 3. 禁止コンテンツポリシー（未成年/非同意/違法）を明記
 4. 通報対応フロー（SLA、対応優先度）を運用に落とし込む
+
+## Optional: Discord report notification
+
+If you want report events to be sent to Discord, set this secret in Cloudflare Pages:
+
+- `DISCORD_WEBHOOK_URL` (Discord channel webhook URL)
+
+You can set it from dashboard or with Wrangler:
+
+```bash
+npx wrangler pages secret put DISCORD_WEBHOOK_URL --project-name civitaiuk
+```
