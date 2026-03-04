@@ -35,6 +35,9 @@ const REPORT_REASONS = new Set([
 ]);
 const GLOBAL_REPORT_WINDOW_MINUTES = 10;
 const GLOBAL_REPORT_LIMIT = 20;
+const AUTO_DELETE_THRESHOLD = 10;
+const POSTER_STAGE1_THRESHOLD = 30;
+const POSTER_STAGE2_THRESHOLD = 50;
 
 export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   const unauthorized = requireAdmin(request, env);
@@ -106,16 +109,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
 
   let resolvedThreadId = threadId ?? null;
   let resolvedPostId = postId ?? null;
+  let targetPosterId: string | null = null;
 
   if (resolvedPostId) {
     const post = await env.DB.prepare(
-      `SELECT id, thread_id AS threadId
+      `SELECT id, thread_id AS threadId, poster_id AS posterId
        FROM posts
        WHERE id = ?1 AND is_deleted = 0`
     )
       .bind(resolvedPostId)
-      .first<{ id: number; threadId: number }>();
+      .first<{ id: number; threadId: number; posterId: string | null }>();
     if (!post) return json({ error: "Post not found." }, 404);
+    targetPosterId = post.posterId ?? null;
 
     const latestReport = await env.DB.prepare(
       `SELECT id
@@ -201,6 +206,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
 
   let uniqueReporterCount = 0;
   let autoDeleted = false;
+  let targetPosterUniqueReporterCount = 0;
+  let posterSanctionStage = 0;
+  let posterWriteBlockedUntil: string | null = null;
+  let posterRequireTurnstile = false;
 
   if (resolvedPostId) {
     const countRow = await env.DB.prepare(
@@ -215,7 +224,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
 
     uniqueReporterCount = Number(countRow?.uniqueReporterCount || 0);
 
-    if (uniqueReporterCount >= 10) {
+    if (uniqueReporterCount >= AUTO_DELETE_THRESHOLD) {
       const updated = await env.DB.prepare(
         `UPDATE posts
          SET is_deleted = 1
@@ -225,6 +234,66 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
         .bind(resolvedPostId)
         .run();
       autoDeleted = Number(updated.meta.changes || 0) > 0;
+    }
+
+    if (targetPosterId) {
+      const posterCountRow = await env.DB.prepare(
+        `SELECT COUNT(DISTINCT r.reporter_id) AS uniqueReporterCount
+         FROM reports r
+         INNER JOIN posts p ON p.id = r.post_id
+         WHERE p.poster_id = ?1
+           AND r.reporter_id IS NOT NULL
+           AND datetime(r.created_at) >= datetime('now', '-1 day')`
+      )
+        .bind(targetPosterId)
+        .first<{ uniqueReporterCount: number }>();
+
+      targetPosterUniqueReporterCount = Number(posterCountRow?.uniqueReporterCount || 0);
+
+      if (targetPosterUniqueReporterCount >= POSTER_STAGE1_THRESHOLD) {
+        posterSanctionStage =
+          targetPosterUniqueReporterCount >= POSTER_STAGE2_THRESHOLD ? 2 : 1;
+        const blockHours = posterSanctionStage === 2 ? 72 : 24;
+        const reasonLabel =
+          posterSanctionStage === 2
+            ? "auto-stage2-50-reports"
+            : "auto-stage1-30-reports";
+
+        await env.DB.prepare(
+          `INSERT INTO poster_sanctions (
+             poster_id, write_block_until, require_turnstile, reason, created_at, updated_at
+           )
+           VALUES (?1, datetime('now', ?2), 1, ?3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+           ON CONFLICT(poster_id) DO UPDATE SET
+             write_block_until = CASE
+               WHEN poster_sanctions.write_block_until IS NULL THEN excluded.write_block_until
+               WHEN datetime(excluded.write_block_until) > datetime(poster_sanctions.write_block_until)
+                 THEN excluded.write_block_until
+               ELSE poster_sanctions.write_block_until
+             END,
+             require_turnstile = CASE
+               WHEN poster_sanctions.require_turnstile = 1 OR excluded.require_turnstile = 1
+                 THEN 1
+               ELSE 0
+             END,
+             reason = excluded.reason,
+             updated_at = CURRENT_TIMESTAMP`
+        )
+          .bind(targetPosterId, `+${blockHours} hours`, reasonLabel)
+          .run();
+
+        const sanctionRow = await env.DB.prepare(
+          `SELECT
+             write_block_until AS writeBlockUntil,
+             require_turnstile AS requireTurnstile
+           FROM poster_sanctions
+           WHERE poster_id = ?1`
+        )
+          .bind(targetPosterId)
+          .first<{ writeBlockUntil: string | null; requireTurnstile: number }>();
+        posterWriteBlockedUntil = sanctionRow?.writeBlockUntil ?? null;
+        posterRequireTurnstile = Number(sanctionRow?.requireTurnstile || 0) === 1;
+      }
     }
   }
 
@@ -240,7 +309,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
       },
       moderation: {
         uniqueReporterCount,
-        autoDeleted
+        autoDeleted,
+        targetPosterId,
+        targetPosterUniqueReporterCount,
+        posterSanctionStage,
+        posterWriteBlockedUntil,
+        posterRequireTurnstile
       }
     },
     201

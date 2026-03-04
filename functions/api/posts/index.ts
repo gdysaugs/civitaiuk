@@ -79,6 +79,31 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   }
 
   const posterId = await buildPosterId(request);
+  const sanction = await env.DB.prepare(
+    `SELECT
+       write_block_until AS writeBlockUntil,
+       require_turnstile AS requireTurnstile,
+       CASE
+         WHEN write_block_until IS NOT NULL
+           AND datetime(write_block_until) > datetime('now')
+         THEN 1
+         ELSE 0
+       END AS isBlocked
+     FROM poster_sanctions
+     WHERE poster_id = ?1
+     LIMIT 1`
+  )
+    .bind(posterId)
+    .first<{ writeBlockUntil: string | null; requireTurnstile: number; isBlocked: number }>();
+  if (Number(sanction?.isBlocked || 0) === 1) {
+    return json(
+      { error: `このIDは投稿停止中です。解除予定: ${sanction?.writeBlockUntil ?? "-"}` },
+      403
+    );
+  }
+  const sanctionRequiresTurnstile =
+    Number(sanction?.requireTurnstile || 0) === 1 && Boolean(env.TURNSTILE_SECRET?.trim());
+
   const deleteToken = createDeleteToken();
   const deleteTokenHash = await sha256Hex(deleteToken);
 
@@ -122,12 +147,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
     .first<{ recentCount: number }>();
   const recentPostCount = Number(recentByPoster?.recentCount || 0);
   const forceTurnstileByRate = recentPostCount + 1 >= RAPID_POST_THRESHOLD;
-  const turnstileRequired = isTurnstileRequired(env) || forceTurnstileByRate;
+  const turnstileRequired = isTurnstileRequired(env) || forceTurnstileByRate || sanctionRequiresTurnstile;
 
   const turnstile = await verifyTurnstileWhen(request, env, payload.turnstileToken, turnstileRequired);
   if (!turnstile.ok) {
     if (forceTurnstileByRate && !payload.turnstileToken?.trim()) {
       return json({ error: "短時間に投稿が集中しています。人間認証後に再投稿してください。" }, 429);
+    }
+    if (sanctionRequiresTurnstile && !payload.turnstileToken?.trim()) {
+      return json({ error: "このIDは人間認証後のみ投稿できます。" }, 403);
     }
     return json({ error: turnstile.error ?? "Human verification failed." }, 403);
   }
