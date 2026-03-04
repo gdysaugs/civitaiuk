@@ -1,4 +1,4 @@
-import { isTurnstileRequired, verifyTurnstile } from "../../_security";
+import { verifyTurnstile } from "../../_security";
 import { clampNumber, json, parseOptionalInt } from "../../_utils";
 import { createTmpObjectKey, resolveMediaUrl } from "../../_media";
 
@@ -11,6 +11,19 @@ type Env = {
 };
 
 const DEFAULT_MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+  "image/bmp",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/x-m4v",
+  "video/x-matroska"
+]);
 
 function guessMimeFromFilename(name: string): string | null {
   const lower = name.toLowerCase();
@@ -30,8 +43,11 @@ function guessMimeFromFilename(name: string): string | null {
 
 function resolveAllowedMime(file: File): string | null {
   const mime = file.type?.trim().toLowerCase() ?? "";
-  if (mime.startsWith("image/") || mime.startsWith("video/")) return mime;
-  return guessMimeFromFilename(file.name || "");
+  if (mime && ALLOWED_UPLOAD_MIME_TYPES.has(mime)) return mime;
+
+  const guessed = guessMimeFromFilename(file.name || "");
+  if (guessed && ALLOWED_UPLOAD_MIME_TYPES.has(guessed)) return guessed;
+  return null;
 }
 
 function sanitizeFilename(name: string): string {
@@ -55,7 +71,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
 
   const token = form.get("turnstileToken");
   const tokenText = typeof token === "string" ? token : token?.toString();
-  if (isTurnstileRequired(env) || tokenText?.trim()) {
+  // Upload is validated again at post/thread creation. Keep this optional
+  // to avoid one-time Turnstile token reuse failures in upload->post flow.
+  if (tokenText?.trim()) {
     const turnstile = await verifyTurnstile(request, env, tokenText);
     if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
   }

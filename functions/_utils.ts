@@ -76,6 +76,25 @@ export function validateMediaType(value: unknown): "image" | "video" | "mixed" {
   return "image";
 }
 
+export type MediaKind = "none" | "image" | "video" | "unknown";
+
+export function detectMediaKind(mediaUrl: string | null, mediaMime: string | null): MediaKind {
+  if (!mediaUrl) return "none";
+
+  const mime = (mediaMime || "").trim().toLowerCase();
+  if (mime) {
+    if (mime === "image/svg+xml") return "unknown";
+    if (mime.startsWith("image/")) return "image";
+    if (mime.startsWith("video/")) return "video";
+    return "unknown";
+  }
+
+  const lowerUrl = mediaUrl.toLowerCase();
+  if (/\.(png|jpg|jpeg|gif|webp|bmp|avif)(\?|#|$)/.test(lowerUrl)) return "image";
+  if (/\.(mp4|webm|mov|m4v|mkv)(\?|#|$)/.test(lowerUrl)) return "video";
+  return "unknown";
+}
+
 export function parseEnvBool(value: string | undefined, fallback = false): boolean {
   if (value === undefined) return fallback;
   const normalized = value.trim().toLowerCase();
@@ -86,4 +105,39 @@ export function clampNumber(value: number, min: number, max: number): number {
   if (value < min) return min;
   if (value > max) return max;
   return value;
+}
+
+function readClientIp(request: Request): string {
+  const cfIp = request.headers.get("cf-connecting-ip");
+  if (cfIp) return cfIp.trim();
+
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (!forwarded) return "";
+  const first = forwarded.split(",")[0];
+  return first ? first.trim() : "";
+}
+
+function hexFromBytes(bytes: Uint8Array): string {
+  let out = "";
+  for (const b of bytes) out += b.toString(16).padStart(2, "0");
+  return out;
+}
+
+export async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return hexFromBytes(new Uint8Array(digest));
+}
+
+export async function buildPosterId(request: Request, now = new Date()): Promise<string> {
+  const ip = readClientIp(request);
+  const ua = request.headers.get("user-agent")?.trim() ?? "";
+  const dayBucket = Math.floor(now.getTime() / (24 * 60 * 60 * 1000));
+  const src = `${ip}|${ua}|${dayBucket}`;
+  const digest = await sha256Hex(src);
+  return digest.slice(0, 8).toUpperCase();
+}
+
+export function createDeleteToken(): string {
+  return `${crypto.randomUUID()}-${crypto.randomUUID()}`.replace(/-/g, "");
 }

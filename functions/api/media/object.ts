@@ -24,6 +24,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
+  const contentType = (headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (contentType === "image/svg+xml") {
+    return json({ error: "SVG media is not allowed." }, 403);
+  }
   headers.set("etag", object.httpEtag);
   headers.set("cache-control", headers.get("cache-control") ?? "public, max-age=31536000, immutable");
 

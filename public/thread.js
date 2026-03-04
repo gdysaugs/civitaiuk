@@ -703,13 +703,15 @@ async function deleteOwnPost(postId) {
 }
 
 async function submitReport(postId) {
+  const reportToken = state.turnstile.tokens.reply || undefined;
   return request("/api/reports", {
     method: "POST",
     body: JSON.stringify({
       threadId: state.threadId,
       postId,
       reason: "other",
-      details: "quick-report"
+      details: "quick-report",
+      turnstileToken: reportToken
     })
   });
 }

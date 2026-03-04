@@ -1,4 +1,4 @@
-import { requireAdmin, verifyTurnstile } from "../../_security";
+import { requireAdmin, verifyTurnstileWhen } from "../../_security";
 import {
   buildPosterId,
   cleanLongText,
@@ -83,7 +83,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
   if (!threadId && !postId) return json({ error: "threadId or postId is required." }, 400);
   if (!reason || !REPORT_REASONS.has(reason)) return json({ error: "Invalid reason." }, 400);
 
-  const turnstile = await verifyTurnstile(request, env, payload.turnstileToken);
+  // Keep report Turnstile optional so TURNSTILE_REQUIRED=1 does not break reporting UI.
+  const turnstile = await verifyTurnstileWhen(request, env, payload.turnstileToken, false);
   if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
 
   const reporterId = await buildPosterId(request);
