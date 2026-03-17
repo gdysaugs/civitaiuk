@@ -3,57 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AIちゃんねる</title>
+    <title>AI動画のレシピ</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="icon" href="/favicon.webp" type="image/webp" />
+    <link rel="shortcut icon" href="/favicon.webp" type="image/webp" />
+    <link rel="apple-touch-icon" href="/favicon.webp" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header class="app-header">
+    <header class="site-header app-header">
       <a class="brand brand-link" href="/">
-        <h1>AIちゃんねる</h1>
-        <p>AI画像専用の掲示板サイト</p>
+        <h1>AI動画のレシピ</h1>
+        <p>AI動画の作り方をまとめるブログ</p>
       </a>
-      <div class="header-actions">
-        <a href="/new" class="btn primary">スレッド作成</a>
-      </div>
     </header>
 
-    <main class="list-layout">
-      <section class="feed-column">
-        <section class="feed-head card">
-          <h2>スレッド一覧</h2>
-          <p class="muted">更新順</p>
-        </section>
-        <div id="threads" class="feed-list"></div>
-        <nav id="threadPager" class="pagination-nav list-pagination hidden" aria-label="スレッドページ移動"></nav>
-      </section>
+    <main class="container">
+      <section id="postList" class="post-grid"></section>
+      <nav id="pager" class="pager hidden" aria-label="Pagination"></nav>
     </main>
 
-    <footer class="page-footer">
-      <div class="page-footer-actions">
-        <a href="/report" class="btn ghost">通報</a>
-        <a href="/terms" class="btn ghost">利用規約</a>
-      </div>
-    </footer>
-
-    <template id="threadItemTemplate">
-      <button class="feed-item" type="button">
-        <div class="feed-item-row">
-          <div class="thread-thumb"></div>
-          <div class="feed-main">
-            <p class="feed-title"></p>
-            <div class="feed-meta">
-              <span class="updated"></span>
-            </div>
+    <template id="postCardTemplate">
+      <article class="card post-card">
+        <button class="post-card-button" type="button">
+          <div class="post-card-media"></div>
+          <div class="post-card-content">
+            <h3 class="post-card-title"></h3>
+            <p class="post-card-meta"></p>
+            <p class="post-card-excerpt"></p>
           </div>
-        </div>
-      </button>
+        </button>
+      </article>
     </template>
 
     <script type="module" src="/app.js"></script>

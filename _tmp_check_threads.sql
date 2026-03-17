@@ -1,0 +1,1 @@
+SELECT id, title FROM threads WHERE is_deleted = 0 ORDER BY id DESC LIMIT 15;

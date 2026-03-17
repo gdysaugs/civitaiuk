@@ -98,15 +98,12 @@ Pagesプロジェクト `civitaiuk` に以下を設定してください。
 2. `ADMIN_TOKEN` を強固なランダム値に設定
 3. 禁止コンテンツポリシー（未成年/非同意/違法）を明記
 4. 通報対応フロー（SLA、対応優先度）を運用に落とし込む
+5. 通報自動削除設定を確認（同一レス: ユーザー単位で2分クールダウン / 24時間でユニークID 10件で自動削除）
+6. 投稿スパム制御を確認（同一IDで1分5投稿以上はTurnstile必須）
 
-## Optional: Discord report notification
+## R2ライフサイクル推奨設定
 
-If you want report events to be sent to Discord, set this secret in Cloudflare Pages:
+- `tmp/` プレフィックス: 1日で自動削除
+- `media/` プレフィックス: 自動削除なし
 
-- `DISCORD_WEBHOOK_URL` (Discord channel webhook URL)
-
-You can set it from dashboard or with Wrangler:
-
-```bash
-npx wrangler pages secret put DISCORD_WEBHOOK_URL --project-name civitaiuk
-```
+この実装ではアップロード時に `tmp/` へ保存し、スレ作成/返信確定時に `media/` へ移動します。

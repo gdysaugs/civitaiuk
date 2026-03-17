@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting...</title>
+    <link rel="icon" href="/favicon.webp" type="image/webp" />
+    <link rel="shortcut icon" href="/favicon.webp" type="image/webp" />
+    <link rel="apple-touch-icon" href="/favicon.webp" />
+    <script>
+      (function () {
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get("id");
+        if (id && /^\d+$/.test(id)) {
+          window.location.replace(`/post?id=${id}`);
+          return;
+        }
+        window.location.replace("/");
+      })();
+    </script>
+  </head>
+  <body>
+    <p>Redirecting...</p>
+    <p><a href="/">Back to home</a></p>
+  </body>
+</html>

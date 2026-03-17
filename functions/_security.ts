@@ -27,13 +27,13 @@ export function isTurnstileRequired(env: SecurityEnv): boolean {
   return parseEnvBool(env.TURNSTILE_REQUIRED, false);
 }
 
-export async function verifyTurnstile(
+async function verifyTurnstileWithRequirement(
   request: Request,
   env: SecurityEnv,
-  token: string | null | undefined
+  token: string | null | undefined,
+  required: boolean
 ): Promise<TurnstileResult> {
   const secret = env.TURNSTILE_SECRET?.trim();
-  const required = isTurnstileRequired(env);
 
   if (!secret) {
     if (required) {
@@ -43,7 +43,10 @@ export async function verifyTurnstile(
   }
 
   const normalizedToken = token?.trim();
-  if (!normalizedToken) return { ok: false, error: "Turnstile token is missing." };
+  if (!normalizedToken) {
+    if (required) return { ok: false, error: "Turnstile token is missing." };
+    return { ok: true };
+  }
 
   const body = new URLSearchParams();
   body.set("secret", secret);
@@ -68,6 +71,23 @@ export async function verifyTurnstile(
   } catch {
     return { ok: false, error: "Turnstile verification failed." };
   }
+}
+
+export async function verifyTurnstile(
+  request: Request,
+  env: SecurityEnv,
+  token: string | null | undefined
+): Promise<TurnstileResult> {
+  return verifyTurnstileWithRequirement(request, env, token, isTurnstileRequired(env));
+}
+
+export async function verifyTurnstileWhen(
+  request: Request,
+  env: SecurityEnv,
+  token: string | null | undefined,
+  required: boolean
+): Promise<TurnstileResult> {
+  return verifyTurnstileWithRequirement(request, env, token, required);
 }
 
 function readBearerToken(request: Request): string | null {

@@ -1,42 +1,111 @@
-import { json, parseLimit } from "../../_utils";
+import { requireAdmin } from "../../_security";
+import { json } from "../../_utils";
 
 type Env = {
   DB: D1Database;
+  ADMIN_TOKEN?: string;
 };
 
-export const onRequestGet: PagesFunction<Env> = async ({ env, params, request }) => {
-  const threadId = Number(params.id);
-  if (!Number.isInteger(threadId) || threadId <= 0) return json({ error: "Invalid thread id." }, 400);
+export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
+  const postId = Number(params.id);
+  if (!Number.isInteger(postId) || postId <= 0) {
+    return json({ error: "Invalid post id." }, 400);
+  }
 
-  const includeNsfw = new URL(request.url).searchParams.get("nsfw") === "include" ? 1 : 0;
-  const limit = parseLimit(new URL(request.url).searchParams.get("postLimit"), 200, 1, 1000);
-
-  const thread = await env.DB.prepare(
-    `SELECT id, title, author_name AS authorName, model_name AS modelName,
-            media_type AS mediaType, nsfw, is_locked AS isLocked,
-            created_at AS createdAt, updated_at AS updatedAt
-     FROM threads
-     WHERE id = ?1 AND is_deleted = 0 AND (?2 = 1 OR nsfw = 0)`
+  const post = await env.DB.prepare(
+    `SELECT
+       t.id,
+       t.title,
+       t.author_name AS authorName,
+       t.created_at AS createdAt,
+       t.updated_at AS updatedAt,
+       p.body,
+       p.media_url AS mediaUrl,
+       p.media_mime AS mediaMime,
+       p.thumbnail_url AS thumbnailUrl
+     FROM threads t
+     LEFT JOIN posts p ON p.id = (
+       SELECT p1.id
+       FROM posts p1
+       WHERE p1.thread_id = t.id
+         AND p1.is_deleted = 0
+       ORDER BY datetime(p1.created_at) ASC, p1.id ASC
+       LIMIT 1
+     )
+     WHERE t.id = ?1
+       AND t.is_deleted = 0
+       AND p.id IS NOT NULL`
   )
-    .bind(threadId, includeNsfw)
+    .bind(postId)
     .first();
 
-  if (!thread) return json({ error: "Thread not found." }, 404);
+  if (!post) return json({ error: "Post not found." }, 404);
 
-  const { results: posts } = await env.DB.prepare(
-    `SELECT id, thread_id AS threadId, body, prompt, workflow_json AS workflowJson,
-            media_url AS mediaUrl, thumbnail_url AS thumbnailUrl,
-            media_mime AS mediaMime,
-            seed, sampler, steps, cfg_scale AS cfgScale,
-            width, height, author_name AS authorName, poster_id AS posterId, nsfw,
-            created_at AS createdAt
-     FROM posts
-     WHERE thread_id = ?1 AND is_deleted = 0
-     ORDER BY datetime(created_at) ASC
-     LIMIT ?2`
+  const recommended = await env.DB.prepare(
+    `SELECT
+       t.id,
+       t.title,
+       p.media_url AS mediaUrl,
+       p.media_mime AS mediaMime,
+       p.thumbnail_url AS thumbnailUrl
+     FROM threads t
+     LEFT JOIN posts p ON p.id = (
+       SELECT p1.id
+       FROM posts p1
+       WHERE p1.thread_id = t.id
+         AND p1.is_deleted = 0
+       ORDER BY datetime(p1.created_at) ASC, p1.id ASC
+       LIMIT 1
+     )
+     WHERE t.is_deleted = 0
+       AND t.id != ?1
+       AND p.id IS NOT NULL
+     ORDER BY RANDOM()
+     LIMIT 6`
   )
-    .bind(threadId, limit)
+    .bind(postId)
     .all();
 
-  return json({ thread, posts, postLimit: limit, includeNsfw: includeNsfw === 1 });
+  return json({ post, recommendations: recommended.results ?? [] });
+};
+
+export const onRequestDelete: PagesFunction<Env> = async ({ env, params, request }) => {
+  const unauthorized = requireAdmin(request, env);
+  if (unauthorized) return unauthorized;
+
+  const postId = Number(params.id);
+  if (!Number.isInteger(postId) || postId <= 0) {
+    return json({ error: "Invalid post id." }, 400);
+  }
+
+  const exists = await env.DB.prepare(
+    `SELECT id
+     FROM threads
+     WHERE id = ?1
+       AND is_deleted = 0`
+  )
+    .bind(postId)
+    .first<{ id: number }>();
+
+  if (!exists) return json({ error: "Post not found." }, 404);
+
+  await env.DB.prepare(
+    `UPDATE threads
+     SET is_deleted = 1,
+         is_locked = 1,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?1`
+  )
+    .bind(postId)
+    .run();
+
+  await env.DB.prepare(
+    `UPDATE posts
+     SET is_deleted = 1
+     WHERE thread_id = ?1`
+  )
+    .bind(postId)
+    .run();
+
+  return json({ ok: true, id: postId });
 };

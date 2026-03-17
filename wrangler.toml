@@ -9,7 +9,7 @@ database_id = "7ae0d58d-d7d5-4e21-98e4-f1358738403f"
 migrations_dir = "migrations"
 
 [vars]
-APP_NAME = "civitai.uk"
+APP_NAME = "AI動画のレシピ"
 TURNSTILE_REQUIRED = "0"
 MAX_UPLOAD_BYTES = "83886080"
 REPORT_CONTACT_TO = "mane795134@gmail.com"

@@ -1,0 +1,1984 @@
+------formdata-undici-065319923472
+Content-Disposition: form-data; name="metadata"
+
+{"main_module":"functionsWorker-0.9387230837281179.js"}
+------formdata-undici-065319923472
+Content-Disposition: form-data; name="functionsWorker-0.9387230837281179.js"; filename="functionsWorker-0.9387230837281179.js"
+Content-Type: application/javascript+module
+
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// _utils.ts
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store"
+    }
+  });
+}
+__name(json, "json");
+async function readJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return null;
+  }
+}
+__name(readJson, "readJson");
+function cleanText(value, maxLen) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (!normalized) return null;
+  return normalized.length > maxLen ? normalized.slice(0, maxLen) : normalized;
+}
+__name(cleanText, "cleanText");
+function cleanLongText(value, maxLen) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  return normalized.length > maxLen ? normalized.slice(0, maxLen) : normalized;
+}
+__name(cleanLongText, "cleanLongText");
+function cleanUrl(value, maxLen) {
+  const input = cleanText(value, maxLen);
+  if (!input) return null;
+  try {
+    const parsed = new URL(input);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+__name(cleanUrl, "cleanUrl");
+function parseBool(value) {
+  if (value === true || value === 1 || value === "1" || value === "on") return 1;
+  return 0;
+}
+__name(parseBool, "parseBool");
+function parseOptionalInt(value) {
+  if (value === null || value === void 0 || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.trunc(parsed);
+}
+__name(parseOptionalInt, "parseOptionalInt");
+function parseOptionalFloat(value) {
+  if (value === null || value === void 0 || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+__name(parseOptionalFloat, "parseOptionalFloat");
+function parseLimit(value, fallback = 50, min = 1, max = 200) {
+  if (!value) return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  const int = Math.trunc(n);
+  if (int < min) return min;
+  if (int > max) return max;
+  return int;
+}
+__name(parseLimit, "parseLimit");
+function validateMediaType(value) {
+  if (value === "video" || value === "mixed") return value;
+  return "image";
+}
+__name(validateMediaType, "validateMediaType");
+function detectMediaKind(mediaUrl, mediaMime) {
+  if (!mediaUrl) return "none";
+  const mime = (mediaMime || "").trim().toLowerCase();
+  if (mime) {
+    if (mime === "image/svg+xml") return "unknown";
+    if (mime.startsWith("image/")) return "image";
+    if (mime.startsWith("video/")) return "video";
+    return "unknown";
+  }
+  const lowerUrl = mediaUrl.toLowerCase();
+  if (/\.(png|jpg|jpeg|gif|webp|bmp|avif)(\?|#|$)/.test(lowerUrl)) return "image";
+  if (/\.(mp4|webm|mov|m4v|mkv)(\?|#|$)/.test(lowerUrl)) return "video";
+  return "unknown";
+}
+__name(detectMediaKind, "detectMediaKind");
+function parseEnvBool(value, fallback = false) {
+  if (value === void 0) return fallback;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+__name(parseEnvBool, "parseEnvBool");
+function clampNumber(value, min, max) {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+__name(clampNumber, "clampNumber");
+function readClientIp(request) {
+  const cfIp = request.headers.get("cf-connecting-ip");
+  if (cfIp) return cfIp.trim();
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (!forwarded) return "";
+  const first = forwarded.split(",")[0];
+  return first ? first.trim() : "";
+}
+__name(readClientIp, "readClientIp");
+function hexFromBytes(bytes) {
+  let out = "";
+  for (const b of bytes) out += b.toString(16).padStart(2, "0");
+  return out;
+}
+__name(hexFromBytes, "hexFromBytes");
+async function sha256Hex(input) {
+  const data = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return hexFromBytes(new Uint8Array(digest));
+}
+__name(sha256Hex, "sha256Hex");
+async function buildPosterId(request, now = /* @__PURE__ */ new Date()) {
+  const ip = readClientIp(request);
+  const ua = request.headers.get("user-agent")?.trim() ?? "";
+  const dayBucket = Math.floor(now.getTime() / (24 * 60 * 60 * 1e3));
+  const src = `${ip}|${ua}|${dayBucket}`;
+  const digest = await sha256Hex(src);
+  return digest.slice(0, 8).toUpperCase();
+}
+__name(buildPosterId, "buildPosterId");
+function createDeleteToken() {
+  return `${crypto.randomUUID()}-${crypto.randomUUID()}`.replace(/-/g, "");
+}
+__name(createDeleteToken, "createDeleteToken");
+
+// _security.ts
+var TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+function readClientIp2(request) {
+  const cfIp = request.headers.get("cf-connecting-ip");
+  if (cfIp) return cfIp.trim();
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (!forwarded) return "";
+  const first = forwarded.split(",")[0];
+  return first ? first.trim() : "";
+}
+__name(readClientIp2, "readClientIp");
+function isTurnstileRequired(env) {
+  return parseEnvBool(env.TURNSTILE_REQUIRED, false);
+}
+__name(isTurnstileRequired, "isTurnstileRequired");
+async function verifyTurnstileWithRequirement(request, env, token, required) {
+  const secret = env.TURNSTILE_SECRET?.trim();
+  if (!secret) {
+    if (required) {
+      return { ok: false, error: "Turnstile required but TURNSTILE_SECRET is not configured." };
+    }
+    return { ok: true };
+  }
+  const normalizedToken = token?.trim();
+  if (!normalizedToken) {
+    if (required) return { ok: false, error: "Turnstile token is missing." };
+    return { ok: true };
+  }
+  const body = new URLSearchParams();
+  body.set("secret", secret);
+  body.set("response", normalizedToken);
+  const clientIp = readClientIp2(request);
+  if (clientIp) body.set("remoteip", clientIp);
+  try {
+    const response = await fetch(TURNSTILE_VERIFY_URL, {
+      method: "POST",
+      body
+    });
+    if (!response.ok) {
+      return { ok: false, error: "Turnstile verification request failed." };
+    }
+    const result = await response.json();
+    if (result.success) return { ok: true };
+    return { ok: false, error: "Turnstile verification failed." };
+  } catch {
+    return { ok: false, error: "Turnstile verification failed." };
+  }
+}
+__name(verifyTurnstileWithRequirement, "verifyTurnstileWithRequirement");
+async function verifyTurnstile(request, env, token) {
+  return verifyTurnstileWithRequirement(request, env, token, isTurnstileRequired(env));
+}
+__name(verifyTurnstile, "verifyTurnstile");
+async function verifyTurnstileWhen(request, env, token, required) {
+  return verifyTurnstileWithRequirement(request, env, token, required);
+}
+__name(verifyTurnstileWhen, "verifyTurnstileWhen");
+function readBearerToken(request) {
+  const auth = request.headers.get("authorization");
+  if (!auth) return null;
+  const [scheme, token] = auth.split(/\s+/, 2);
+  if (!scheme || !token) return null;
+  if (scheme.toLowerCase() !== "bearer") return null;
+  return token.trim();
+}
+__name(readBearerToken, "readBearerToken");
+function requireAdmin(request, env) {
+  const expected = env.ADMIN_TOKEN?.trim();
+  if (!expected) {
+    return json({ error: "Admin API is not configured." }, 503);
+  }
+  const provided = request.headers.get("x-admin-token")?.trim() ?? readBearerToken(request) ?? "";
+  if (!provided || provided !== expected) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  return null;
+}
+__name(requireAdmin, "requireAdmin");
+
+// api/mod/reports/[id]/resolve.ts
+var onRequestPost = /* @__PURE__ */ __name(async ({ env, request, params }) => {
+  const unauthorized = requireAdmin(request, env);
+  if (unauthorized) return unauthorized;
+  const reportId = Number(params.id);
+  if (!Number.isInteger(reportId) || reportId <= 0) return json({ error: "Invalid report id." }, 400);
+  const payload = await readJson(request);
+  if (!payload) return json({ error: "Invalid JSON body." }, 400);
+  const action = cleanText(payload.action, 30) ?? "resolve_only";
+  const note = cleanLongText(payload.note, 1200);
+  const validAction = /* @__PURE__ */ new Set(["resolve_only", "delete_post", "delete_thread", "lock_thread", "reject"]);
+  if (!validAction.has(action)) return json({ error: "Invalid action." }, 400);
+  const report = await env.DB.prepare(
+    `SELECT id, thread_id AS threadId, post_id AS postId, status
+     FROM reports
+     WHERE id = ?1`
+  ).bind(reportId).first();
+  if (!report) return json({ error: "Report not found." }, 404);
+  if (report.status !== "open") return json({ error: "Report is already resolved." }, 409);
+  let threadTarget = report.threadId;
+  if (!threadTarget && report.postId) {
+    const postThread = await env.DB.prepare(
+      `SELECT thread_id AS threadId
+       FROM posts
+       WHERE id = ?1`
+    ).bind(report.postId).first();
+    threadTarget = postThread?.threadId ?? null;
+  }
+  if (action === "delete_post") {
+    if (!report.postId) return json({ error: "Report has no post target." }, 400);
+    await env.DB.prepare("UPDATE posts SET is_deleted = 1 WHERE id = ?1").bind(report.postId).run();
+  }
+  if (action === "delete_thread") {
+    if (!threadTarget) return json({ error: "Report has no thread target." }, 400);
+    await env.DB.prepare("UPDATE threads SET is_deleted = 1, is_locked = 1 WHERE id = ?1").bind(threadTarget).run();
+  }
+  if (action === "lock_thread") {
+    if (!threadTarget) return json({ error: "Report has no thread target." }, 400);
+    await env.DB.prepare("UPDATE threads SET is_locked = 1 WHERE id = ?1").bind(threadTarget).run();
+  }
+  const resolvedStatus = action === "reject" ? "rejected" : "resolved";
+  await env.DB.prepare(
+    `UPDATE reports
+     SET status = ?1,
+         resolution_action = ?2,
+         resolution_note = ?3,
+         resolved_by = ?4,
+         resolved_at = CURRENT_TIMESTAMP
+     WHERE id = ?5`
+  ).bind(resolvedStatus, action, note, "admin", reportId).run();
+  return json({
+    ok: true,
+    reportId,
+    status: resolvedStatus,
+    action
+  });
+}, "onRequestPost");
+
+// api/media/object.ts
+function isAllowedMediaKey(key) {
+  if (!key) return false;
+  if (key.includes("..")) return false;
+  if (key.startsWith("/") || key.startsWith("\\")) return false;
+  if (key.length > 500) return false;
+  return key.startsWith("tmp/") || key.startsWith("media/") || key.startsWith("uploads/");
+}
+__name(isAllowedMediaKey, "isAllowedMediaKey");
+var onRequestGet = /* @__PURE__ */ __name(async ({ env, request }) => {
+  if (!env.MEDIA) return json({ error: "R2 bucket binding MEDIA is not configured." }, 503);
+  const key = new URL(request.url).searchParams.get("key")?.trim();
+  if (!key) return json({ error: "key is required." }, 400);
+  if (!isAllowedMediaKey(key)) return json({ error: "Invalid key." }, 400);
+  const object = await env.MEDIA.get(key);
+  if (!object) return json({ error: "Object not found." }, 404);
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  const contentType = (headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (contentType === "image/svg+xml") {
+    return json({ error: "SVG media is not allowed." }, 403);
+  }
+  headers.set("etag", object.httpEtag);
+  headers.set("cache-control", headers.get("cache-control") ?? "public, max-age=31536000, immutable");
+  return new Response(object.body, { headers });
+}, "onRequestGet");
+
+// _media.ts
+function sanitizeFilename(name) {
+  const base = name.trim().toLowerCase();
+  const safe = base.replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-");
+  return safe.slice(0, 120) || "file.bin";
+}
+__name(sanitizeFilename, "sanitizeFilename");
+function buildDatedKey(prefix, filename) {
+  const now = /* @__PURE__ */ new Date();
+  const yyyy = now.getUTCFullYear();
+  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(now.getUTCDate()).padStart(2, "0");
+  return `${prefix}/${yyyy}/${mm}/${dd}/${crypto.randomUUID()}-${sanitizeFilename(filename)}`;
+}
+__name(buildDatedKey, "buildDatedKey");
+function basenameFromKey(key) {
+  const idx = key.lastIndexOf("/");
+  const name = idx >= 0 ? key.slice(idx + 1) : key;
+  return sanitizeFilename(name);
+}
+__name(basenameFromKey, "basenameFromKey");
+function isAllowedMediaKey2(key) {
+  if (!key) return false;
+  if (key.includes("..")) return false;
+  if (key.startsWith("/") || key.startsWith("\\")) return false;
+  if (key.length > 500) return false;
+  return key.startsWith("tmp/") || key.startsWith("media/") || key.startsWith("uploads/");
+}
+__name(isAllowedMediaKey2, "isAllowedMediaKey");
+function cleanMediaKey(value) {
+  const key = cleanText(value, 500);
+  if (!key) return null;
+  return isAllowedMediaKey2(key) ? key : null;
+}
+__name(cleanMediaKey, "cleanMediaKey");
+function createTmpObjectKey(filename) {
+  return buildDatedKey("tmp", filename);
+}
+__name(createTmpObjectKey, "createTmpObjectKey");
+function createMediaObjectKey(filename) {
+  return buildDatedKey("media", filename);
+}
+__name(createMediaObjectKey, "createMediaObjectKey");
+function resolveMediaUrl(baseUrl, requestUrl, key) {
+  const base = baseUrl?.trim();
+  if (base) return `${base.replace(/\/+$/, "")}/${key}`;
+  const fallback = `/api/media/object?key=${encodeURIComponent(key)}`;
+  return new URL(fallback, requestUrl).toString();
+}
+__name(resolveMediaUrl, "resolveMediaUrl");
+async function resolveCommittedMedia(env, input) {
+  const normalizedKey = input.mediaKey?.trim() ?? "";
+  if (!normalizedKey) {
+    return {
+      mediaUrl: input.mediaUrl,
+      mediaMime: input.mediaMime,
+      mediaKey: null
+    };
+  }
+  if (!isAllowedMediaKey2(normalizedKey)) {
+    throw new Error("Invalid mediaKey.");
+  }
+  if (!env.MEDIA) {
+    throw new Error("R2 media storage is not configured.");
+  }
+  if (normalizedKey.startsWith("media/") || normalizedKey.startsWith("uploads/")) {
+    return {
+      mediaUrl: resolveMediaUrl(env.R2_PUBLIC_BASE_URL, input.requestUrl, normalizedKey),
+      mediaMime: input.mediaMime,
+      mediaKey: normalizedKey
+    };
+  }
+  if (!normalizedKey.startsWith("tmp/")) {
+    throw new Error("Invalid mediaKey.");
+  }
+  const object = await env.MEDIA.get(normalizedKey);
+  if (!object) {
+    throw new Error("Uploaded media was not found. Please upload again.");
+  }
+  const destinationKey = createMediaObjectKey(basenameFromKey(normalizedKey));
+  const body = object.body;
+  if (!body) {
+    throw new Error("Uploaded media body is missing. Please upload again.");
+  }
+  const resolvedMime = object.httpMetadata?.contentType?.trim() || input.mediaMime || null;
+  await env.MEDIA.put(destinationKey, body, {
+    httpMetadata: {
+      contentType: resolvedMime ?? void 0,
+      cacheControl: "public, max-age=31536000, immutable"
+    }
+  });
+  try {
+    await env.MEDIA.delete(normalizedKey);
+  } catch {
+  }
+  return {
+    mediaUrl: resolveMediaUrl(env.R2_PUBLIC_BASE_URL, input.requestUrl, destinationKey),
+    mediaMime: resolvedMime,
+    mediaKey: destinationKey
+  };
+}
+__name(resolveCommittedMedia, "resolveCommittedMedia");
+
+// api/media/upload.ts
+var DEFAULT_MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
+var ALLOWED_UPLOAD_MIME_TYPES = /* @__PURE__ */ new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+  "image/bmp",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/x-m4v",
+  "video/x-matroska"
+]);
+function guessMimeFromFilename(name) {
+  const lower = name.toLowerCase();
+  if (/\.(jpg|jpeg)$/.test(lower)) return "image/jpeg";
+  if (/\.png$/.test(lower)) return "image/png";
+  if (/\.gif$/.test(lower)) return "image/gif";
+  if (/\.webp$/.test(lower)) return "image/webp";
+  if (/\.avif$/.test(lower)) return "image/avif";
+  if (/\.bmp$/.test(lower)) return "image/bmp";
+  if (/\.mp4$/.test(lower)) return "video/mp4";
+  if (/\.webm$/.test(lower)) return "video/webm";
+  if (/\.mov$/.test(lower)) return "video/quicktime";
+  if (/\.m4v$/.test(lower)) return "video/x-m4v";
+  if (/\.mkv$/.test(lower)) return "video/x-matroska";
+  return null;
+}
+__name(guessMimeFromFilename, "guessMimeFromFilename");
+function resolveAllowedMime(file) {
+  const mime = file.type?.trim().toLowerCase() ?? "";
+  if (mime && ALLOWED_UPLOAD_MIME_TYPES.has(mime)) return mime;
+  const guessed = guessMimeFromFilename(file.name || "");
+  if (guessed && ALLOWED_UPLOAD_MIME_TYPES.has(guessed)) return guessed;
+  return null;
+}
+__name(resolveAllowedMime, "resolveAllowedMime");
+function sanitizeFilename2(name) {
+  const base = name.trim().toLowerCase();
+  const safe = base.replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-");
+  return safe.slice(0, 120) || "file.bin";
+}
+__name(sanitizeFilename2, "sanitizeFilename");
+var onRequestPost2 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  if (!env.MEDIA) return json({ error: "R2 bucket binding MEDIA is not configured." }, 503);
+  const maxUploadCandidate = parseOptionalInt(env.MAX_UPLOAD_BYTES);
+  const maxUploadBytes = clampNumber(maxUploadCandidate ?? DEFAULT_MAX_UPLOAD_BYTES, 1024, 120 * 1024 * 1024);
+  let form;
+  try {
+    form = await request.formData();
+  } catch {
+    return json({ error: "Invalid multipart form data." }, 400);
+  }
+  const token = form.get("turnstileToken");
+  const tokenText = typeof token === "string" ? token : token?.toString();
+  if (tokenText?.trim()) {
+    const turnstile = await verifyTurnstile(request, env, tokenText);
+    if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
+  }
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    return json({ error: "file is required." }, 400);
+  }
+  const resolvedMimeType = resolveAllowedMime(file);
+  if (!resolvedMimeType) {
+    return json({ error: "Only image/video files are allowed." }, 400);
+  }
+  if (file.size <= 0) {
+    return json({ error: "Empty file is not allowed." }, 400);
+  }
+  if (file.size > maxUploadBytes) {
+    return json({ error: `File is too large. Max ${maxUploadBytes} bytes.` }, 413);
+  }
+  const key = createTmpObjectKey(sanitizeFilename2(file.name || "upload.bin"));
+  const body = file.stream();
+  await env.MEDIA.put(key, body, {
+    httpMetadata: {
+      contentType: resolvedMimeType,
+      cacheControl: "public, max-age=86400"
+    }
+  });
+  return json(
+    {
+      key,
+      mediaKey: key,
+      mediaUrl: resolveMediaUrl(env.R2_PUBLIC_BASE_URL, request.url, key),
+      mimeType: resolvedMimeType,
+      size: file.size
+    },
+    201
+  );
+}, "onRequestPost");
+
+// api/posts/[id].ts
+var onRequestDelete = /* @__PURE__ */ __name(async ({ env, params, request }) => {
+  const postId = Number(params.id);
+  if (!Number.isInteger(postId) || postId <= 0) return json({ error: "Invalid post id." }, 400);
+  const payload = await readJson(request);
+  if (!payload) return json({ error: "Invalid JSON body." }, 400);
+  const deleteToken = cleanText(payload.deleteToken, 200);
+  if (!deleteToken) return json({ error: "deleteToken is required." }, 400);
+  const deleteTokenHash = await sha256Hex(deleteToken);
+  const post = await env.DB.prepare(
+    `SELECT id, thread_id AS threadId, is_deleted AS isDeleted, delete_token_hash AS deleteTokenHash
+     FROM posts
+     WHERE id = ?1`
+  ).bind(postId).first();
+  if (!post) return json({ error: "Post not found." }, 404);
+  if (post.isDeleted === 1) return json({ ok: true, alreadyDeleted: true });
+  if (!post.deleteTokenHash) return json({ error: "This post cannot be deleted by user token." }, 403);
+  if (post.deleteTokenHash !== deleteTokenHash) return json({ error: "Invalid delete token." }, 403);
+  await env.DB.prepare(
+    `UPDATE posts
+     SET is_deleted = 1
+     WHERE id = ?1 AND is_deleted = 0`
+  ).bind(postId).run();
+  await env.DB.prepare(
+    `UPDATE threads
+     SET updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?1`
+  ).bind(post.threadId).run();
+  return json({ ok: true, postId });
+}, "onRequestDelete");
+
+// api/threads/[id].ts
+var onRequestGet2 = /* @__PURE__ */ __name(async ({ env, params, request }) => {
+  const threadId = Number(params.id);
+  if (!Number.isInteger(threadId) || threadId <= 0) return json({ error: "Invalid thread id." }, 400);
+  const includeNsfw = new URL(request.url).searchParams.get("nsfw") === "include" ? 1 : 0;
+  const limit = parseLimit(new URL(request.url).searchParams.get("postLimit"), 200, 1, 1e3);
+  const thread = await env.DB.prepare(
+    `SELECT id, title, author_name AS authorName, model_name AS modelName,
+            media_type AS mediaType, nsfw, is_locked AS isLocked,
+            created_at AS createdAt, updated_at AS updatedAt
+     FROM threads
+     WHERE id = ?1 AND is_deleted = 0 AND (?2 = 1 OR nsfw = 0)`
+  ).bind(threadId, includeNsfw).first();
+  if (!thread) return json({ error: "Thread not found." }, 404);
+  const { results: posts } = await env.DB.prepare(
+    `SELECT id, thread_id AS threadId, body, prompt, workflow_json AS workflowJson,
+            media_url AS mediaUrl, thumbnail_url AS thumbnailUrl,
+            media_mime AS mediaMime,
+            seed, sampler, steps, cfg_scale AS cfgScale,
+            width, height, author_name AS authorName, poster_id AS posterId, nsfw,
+            created_at AS createdAt
+     FROM posts
+     WHERE thread_id = ?1 AND is_deleted = 0
+     ORDER BY datetime(created_at) ASC
+     LIMIT ?2`
+  ).bind(threadId, limit).all();
+  return json({ thread, posts, postLimit: limit, includeNsfw: includeNsfw === 1 });
+}, "onRequestGet");
+
+// api/config.ts
+var onRequestGet3 = /* @__PURE__ */ __name(async ({ env }) => {
+  const maxUploadCandidate = parseOptionalInt(env.MAX_UPLOAD_BYTES);
+  const maxUploadBytes = maxUploadCandidate && maxUploadCandidate > 0 ? maxUploadCandidate : 80 * 1024 * 1024;
+  return json({
+    appName: env.APP_NAME ?? "civitai.uk",
+    turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
+    turnstileRequired: isTurnstileRequired(env),
+    uploadsEnabled: Boolean(env.MEDIA),
+    publicMediaBaseUrl: env.R2_PUBLIC_BASE_URL ?? null,
+    maxUploadBytes
+  });
+}, "onRequestGet");
+
+// api/contact-report.ts
+var DEFAULT_REPORT_TO = "mane795134@gmail.com";
+var DEFAULT_REPORT_FROM = "noreply@civitai.uk";
+var DEFAULT_PROVIDER = "mailchannels";
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+__name(isValidEmail, "isValidEmail");
+async function sendViaMailChannels(input) {
+  const response = await fetch("https://api.mailchannels.net/tx/v1/send", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      personalizations: [
+        {
+          to: [{ email: input.to }]
+        }
+      ],
+      from: {
+        email: input.from,
+        name: input.appName
+      },
+      subject: input.subject,
+      content: [
+        {
+          type: "text/plain",
+          value: input.textBody
+        }
+      ]
+    })
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`MailChannels failed (${response.status}): ${detail.slice(0, 240)}`);
+  }
+}
+__name(sendViaMailChannels, "sendViaMailChannels");
+async function sendViaResend(apiKey, input) {
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      from: input.from,
+      to: [input.to],
+      subject: input.subject,
+      text: input.textBody
+    })
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Resend failed (${response.status}): ${detail.slice(0, 240)}`);
+  }
+}
+__name(sendViaResend, "sendViaResend");
+var onRequestPost3 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  const payload = await readJson(request);
+  if (!payload) return json({ error: "Invalid JSON body." }, 400);
+  const title = cleanText(payload.title, 120);
+  const content = cleanLongText(payload.content, 4e3);
+  if (!title || title.length < 2) return json({ error: "\u30BF\u30A4\u30C8\u30EB\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002" }, 400);
+  if (!content || content.length < 5) return json({ error: "\u5185\u5BB9\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002" }, 400);
+  const turnstile = await verifyTurnstileWhen(request, env, payload.turnstileToken, false);
+  if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
+  const reportTo = cleanText(env.REPORT_CONTACT_TO, 254) ?? DEFAULT_REPORT_TO;
+  const reportFrom = cleanText(env.REPORT_CONTACT_FROM, 254) ?? DEFAULT_REPORT_FROM;
+  if (!isValidEmail(reportTo) || !isValidEmail(reportFrom)) {
+    return json({ error: "\u901A\u5831\u30E1\u30FC\u30EB\u9001\u4FE1\u8A2D\u5B9A\u304C\u7121\u52B9\u3067\u3059\u3002" }, 503);
+  }
+  const appName = cleanText(env.APP_NAME, 80) ?? "AI\u3061\u3083\u3093\u306D\u308B";
+  const provider = (cleanText(env.REPORT_CONTACT_PROVIDER, 20) ?? DEFAULT_PROVIDER).toLowerCase();
+  const posterId = await buildPosterId(request);
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const origin = new URL(request.url).origin;
+  const subject = `[${appName}] \u901A\u5831\u30D5\u30A9\u30FC\u30E0: ${title}`;
+  const textBody = `\u30B5\u30A4\u30C8: ${appName}
+\u9001\u4FE1\u5143: ${origin}
+\u6295\u7A3F\u8005ID: ${posterId}
+\u6642\u523B(UTC): ${nowIso}
+\u30BF\u30A4\u30C8\u30EB: ${title}
+
+${content}
+`;
+  try {
+    if (provider === "resend") {
+      const apiKey = env.RESEND_API_KEY?.trim();
+      if (!apiKey) return json({ error: "RESEND_API_KEY \u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002" }, 503);
+      await sendViaResend(apiKey, {
+        to: reportTo,
+        from: reportFrom,
+        subject,
+        textBody
+      });
+    } else {
+      await sendViaMailChannels({
+        to: reportTo,
+        from: reportFrom,
+        appName,
+        subject,
+        textBody
+      });
+    }
+  } catch {
+    return json({ error: "\u30E1\u30FC\u30EB\u9001\u4FE1\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002\u6642\u9593\u3092\u304A\u3044\u3066\u518D\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002" }, 502);
+  }
+  return json({ ok: true, message: "\u901A\u5831\u3092\u9001\u4FE1\u3057\u307E\u3057\u305F\u3002" }, 201);
+}, "onRequestPost");
+
+// api/health.ts
+var onRequestGet4 = /* @__PURE__ */ __name(async ({ env }) => {
+  try {
+    const result = await env.DB.prepare("SELECT 1 as ok").first();
+    return json({ ok: true, db: result?.ok === 1 });
+  } catch (error) {
+    return json({ ok: false, error: String(error) }, 500);
+  }
+}, "onRequestGet");
+
+// api/posts/index.ts
+var MAX_POSTS_PER_THREAD = 1e3;
+var RAPID_POST_THRESHOLD = 5;
+var onRequestPost4 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  const payload = await readJson(request);
+  if (!payload) return json({ error: "Invalid JSON body." }, 400);
+  const threadId = parseOptionalInt(payload.threadId);
+  const body = cleanLongText(payload.body, 500);
+  const authorName = cleanText(payload.authorName, 40) ?? "\u540D\u7121\u3057\u3061\u3083\u3093";
+  const nsfw = parseBool(payload.nsfw);
+  const mediaUrl = cleanUrl(payload.mediaUrl, 2e3);
+  const mediaKey = cleanMediaKey(payload.mediaKey);
+  const thumbnailUrl = cleanUrl(payload.thumbnailUrl, 2e3);
+  const prompt = cleanLongText(payload.prompt, 4e3);
+  const workflowJson = cleanLongText(payload.workflowJson, 2e4);
+  const seed = parseOptionalInt(payload.seed);
+  const sampler = cleanText(payload.sampler, 80);
+  const steps = parseOptionalInt(payload.steps);
+  const cfgScale = parseOptionalFloat(payload.cfgScale);
+  const width = parseOptionalInt(payload.width);
+  const height = parseOptionalInt(payload.height);
+  const mediaMime = cleanText(payload.mediaMime, 120);
+  if (!threadId || threadId <= 0) return json({ error: "Valid threadId is required." }, 400);
+  if (!body && !mediaUrl && !mediaKey) return json({ error: "Body or media is required." }, 400);
+  if (payload.mediaKey !== void 0 && !mediaKey) {
+    return json({ error: "mediaKey is invalid." }, 400);
+  }
+  if (payload.mediaUrl && !mediaUrl) return json({ error: "mediaUrl must be a valid http/https URL." }, 400);
+  if (payload.thumbnailUrl && !thumbnailUrl) {
+    return json({ error: "thumbnailUrl must be a valid http/https URL." }, 400);
+  }
+  const posterId = await buildPosterId(request);
+  const sanction = await env.DB.prepare(
+    `SELECT
+       write_block_until AS writeBlockUntil,
+       require_turnstile AS requireTurnstile,
+       CASE
+         WHEN write_block_until IS NOT NULL
+           AND datetime(write_block_until) > datetime('now')
+         THEN 1
+         ELSE 0
+       END AS isBlocked
+     FROM poster_sanctions
+     WHERE poster_id = ?1
+     LIMIT 1`
+  ).bind(posterId).first();
+  if (Number(sanction?.isBlocked || 0) === 1) {
+    return json(
+      { error: `\u3053\u306EID\u306F\u6295\u7A3F\u505C\u6B62\u4E2D\u3067\u3059\u3002\u89E3\u9664\u4E88\u5B9A: ${sanction?.writeBlockUntil ?? "-"}` },
+      403
+    );
+  }
+  const sanctionRequiresTurnstile = Number(sanction?.requireTurnstile || 0) === 1 && Boolean(env.TURNSTILE_SECRET?.trim());
+  const deleteToken = createDeleteToken();
+  const deleteTokenHash = await sha256Hex(deleteToken);
+  const thread = await env.DB.prepare(
+    `SELECT id, is_locked AS isLocked
+     FROM threads
+     WHERE id = ?1 AND is_deleted = 0`
+  ).bind(threadId).first();
+  if (!thread) return json({ error: "Thread not found." }, 404);
+  if (thread.isLocked === 1) return json({ error: "Thread is locked." }, 403);
+  const countRow = await env.DB.prepare(
+    `SELECT COUNT(*) AS postCount
+     FROM posts
+     WHERE thread_id = ?1
+       AND is_deleted = 0`
+  ).bind(threadId).first();
+  const currentPostCount = Number(countRow?.postCount || 0);
+  if (currentPostCount >= MAX_POSTS_PER_THREAD) {
+    await env.DB.prepare(
+      `UPDATE threads
+       SET is_locked = 1
+       WHERE id = ?1`
+    ).bind(threadId).run();
+    return json({ error: `Thread reached ${MAX_POSTS_PER_THREAD} posts and is now locked.` }, 403);
+  }
+  const recentByPoster = await env.DB.prepare(
+    `SELECT COUNT(*) AS recentCount
+     FROM posts
+     WHERE poster_id = ?1
+       AND datetime(created_at) >= datetime('now', '-1 minute')`
+  ).bind(posterId).first();
+  const recentPostCount = Number(recentByPoster?.recentCount || 0);
+  const forceTurnstileByRate = recentPostCount + 1 >= RAPID_POST_THRESHOLD;
+  const turnstileRequired = isTurnstileRequired(env) || forceTurnstileByRate || sanctionRequiresTurnstile;
+  const turnstile = await verifyTurnstileWhen(request, env, payload.turnstileToken, turnstileRequired);
+  if (!turnstile.ok) {
+    if (forceTurnstileByRate && !payload.turnstileToken?.trim()) {
+      return json({ error: "\u77ED\u6642\u9593\u306B\u6295\u7A3F\u304C\u96C6\u4E2D\u3057\u3066\u3044\u307E\u3059\u3002\u4EBA\u9593\u8A8D\u8A3C\u5F8C\u306B\u518D\u6295\u7A3F\u3057\u3066\u304F\u3060\u3055\u3044\u3002" }, 429);
+    }
+    if (sanctionRequiresTurnstile && !payload.turnstileToken?.trim()) {
+      return json({ error: "\u3053\u306EID\u306F\u4EBA\u9593\u8A8D\u8A3C\u5F8C\u306E\u307F\u6295\u7A3F\u3067\u304D\u307E\u3059\u3002" }, 403);
+    }
+    return json({ error: turnstile.error ?? "Human verification failed." }, 403);
+  }
+  let committedMedia;
+  try {
+    committedMedia = await resolveCommittedMedia(env, {
+      requestUrl: request.url,
+      mediaUrl,
+      mediaMime,
+      mediaKey
+    });
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : "Invalid media input." }, 400);
+  }
+  const finalMediaUrl = committedMedia.mediaUrl;
+  const finalMediaMime = committedMedia.mediaMime;
+  const mediaKind = detectMediaKind(finalMediaUrl, finalMediaMime);
+  if (!body && !finalMediaUrl) return json({ error: "Body or media is required." }, 400);
+  if (mediaKind === "unknown") return json({ error: "Only image/video media is allowed." }, 400);
+  const result = await env.DB.prepare(
+    `INSERT INTO posts (
+      thread_id, body, prompt, workflow_json, media_url, thumbnail_url,
+      media_mime, seed, sampler, steps, cfg_scale, width, height, author_name, nsfw, poster_id, delete_token_hash
+    )
+    SELECT
+      ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17
+    WHERE EXISTS (
+      SELECT 1
+      FROM threads t
+      WHERE t.id = ?18
+        AND t.is_deleted = 0
+        AND t.is_locked = 0
+    )
+      AND (
+        SELECT COUNT(*)
+        FROM posts p
+        WHERE p.thread_id = ?19
+          AND p.is_deleted = 0
+      ) < ?20`
+  ).bind(
+    threadId,
+    body ?? "",
+    prompt,
+    workflowJson,
+    finalMediaUrl,
+    thumbnailUrl,
+    finalMediaMime,
+    seed,
+    sampler,
+    steps,
+    cfgScale,
+    width,
+    height,
+    authorName,
+    nsfw,
+    posterId,
+    deleteTokenHash,
+    threadId,
+    threadId,
+    MAX_POSTS_PER_THREAD
+  ).run();
+  if (Number(result.meta.changes || 0) < 1) {
+    const latestThread = await env.DB.prepare(
+      `SELECT id, is_locked AS isLocked
+       FROM threads
+       WHERE id = ?1
+         AND is_deleted = 0`
+    ).bind(threadId).first();
+    if (!latestThread) return json({ error: "Thread not found." }, 404);
+    const latestCountRow = await env.DB.prepare(
+      `SELECT COUNT(*) AS postCount
+       FROM posts
+       WHERE thread_id = ?1
+         AND is_deleted = 0`
+    ).bind(threadId).first();
+    const latestPostCount = Number(latestCountRow?.postCount || 0);
+    if (latestPostCount >= MAX_POSTS_PER_THREAD) {
+      await env.DB.prepare(
+        `UPDATE threads
+         SET is_locked = 1
+         WHERE id = ?1`
+      ).bind(threadId).run();
+      return json({ error: `Thread reached ${MAX_POSTS_PER_THREAD} posts and is now locked.` }, 403);
+    }
+    if (latestThread.isLocked === 1) {
+      return json({ error: "Thread is locked." }, 403);
+    }
+    return json({ error: "Posting state changed. Please retry." }, 409);
+  }
+  await env.DB.prepare(
+    `UPDATE threads
+     SET is_locked = 1
+     WHERE id = ?1
+       AND (
+         SELECT COUNT(*)
+         FROM posts
+         WHERE thread_id = ?1
+           AND is_deleted = 0
+       ) >= ?2`
+  ).bind(threadId, MAX_POSTS_PER_THREAD).run();
+  const postId = Number(result.meta.last_row_id);
+  const created = await env.DB.prepare(
+    `SELECT id, thread_id AS threadId, body, prompt, workflow_json AS workflowJson,
+            media_url AS mediaUrl, thumbnail_url AS thumbnailUrl, media_mime AS mediaMime,
+            seed, sampler,
+            steps, cfg_scale AS cfgScale, width, height, author_name AS authorName,
+            nsfw, poster_id AS posterId, created_at AS createdAt
+     FROM posts
+     WHERE id = ?1`
+  ).bind(postId).first();
+  return json({ post: created, deleteToken }, 201);
+}, "onRequestPost");
+
+// api/reports/index.ts
+var REPORT_REASONS = /* @__PURE__ */ new Set([
+  "illegal",
+  "copyright",
+  "non-consensual",
+  "minor-suspected",
+  "harassment",
+  "spam",
+  "other"
+]);
+var GLOBAL_REPORT_WINDOW_MINUTES = 10;
+var GLOBAL_REPORT_LIMIT = 20;
+var AUTO_DELETE_THRESHOLD = 10;
+var POSTER_STAGE1_THRESHOLD = 30;
+var POSTER_STAGE2_THRESHOLD = 50;
+var onRequestGet5 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  const unauthorized = requireAdmin(request, env);
+  if (unauthorized) return unauthorized;
+  const url = new URL(request.url);
+  const status = cleanText(url.searchParams.get("status"), 20) ?? "open";
+  const limit = parseLimit(url.searchParams.get("limit"), 100, 1, 500);
+  const { results } = await env.DB.prepare(
+    `SELECT
+       r.id,
+       r.thread_id AS threadId,
+       r.post_id AS postId,
+       r.reporter_id AS reporterId,
+       r.reason,
+       r.details,
+       r.status,
+       r.resolution_action AS resolutionAction,
+       r.resolution_note AS resolutionNote,
+       r.resolved_by AS resolvedBy,
+       r.resolved_at AS resolvedAt,
+       r.created_at AS createdAt,
+       t.title AS threadTitle
+     FROM reports r
+     LEFT JOIN threads t ON t.id = r.thread_id
+     WHERE (?1 = 'all' OR r.status = ?1)
+     ORDER BY datetime(r.created_at) DESC
+     LIMIT ?2`
+  ).bind(status, limit).all();
+  return json({ reports: results, status, limit });
+}, "onRequestGet");
+var onRequestPost5 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  const payload = await readJson(request);
+  if (!payload) return json({ error: "Invalid JSON body." }, 400);
+  const threadId = parseOptionalInt(payload.threadId);
+  const postId = parseOptionalInt(payload.postId);
+  const reason = cleanText(payload.reason, 40);
+  const details = cleanLongText(payload.details, 2e3);
+  if (!threadId && !postId) return json({ error: "threadId or postId is required." }, 400);
+  if (!reason || !REPORT_REASONS.has(reason)) return json({ error: "Invalid reason." }, 400);
+  const turnstile = await verifyTurnstileWhen(request, env, payload.turnstileToken, false);
+  if (!turnstile.ok) return json({ error: turnstile.error ?? "Human verification failed." }, 403);
+  const reporterId = await buildPosterId(request);
+  const globalRate = await env.DB.prepare(
+    `SELECT COUNT(*) AS recentCount
+     FROM reports
+     WHERE reporter_id = ?1
+       AND datetime(created_at) >= datetime('now', ?2)`
+  ).bind(reporterId, `-${GLOBAL_REPORT_WINDOW_MINUTES} minutes`).first();
+  const recentReportCount = Number(globalRate?.recentCount || 0);
+  if (recentReportCount >= GLOBAL_REPORT_LIMIT) {
+    return json(
+      { error: `\u901A\u5831\u304C\u591A\u3059\u304E\u307E\u3059\u3002${GLOBAL_REPORT_WINDOW_MINUTES}\u5206\u307B\u3069\u5F85\u3063\u3066\u304B\u3089\u518D\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002` },
+      429
+    );
+  }
+  let resolvedThreadId = threadId ?? null;
+  let resolvedPostId = postId ?? null;
+  let targetPosterId = null;
+  if (resolvedPostId) {
+    const post = await env.DB.prepare(
+      `SELECT id, thread_id AS threadId, poster_id AS posterId
+       FROM posts
+       WHERE id = ?1 AND is_deleted = 0`
+    ).bind(resolvedPostId).first();
+    if (!post) return json({ error: "Post not found." }, 404);
+    targetPosterId = post.posterId ?? null;
+    const latestReport = await env.DB.prepare(
+      `SELECT id
+       FROM reports
+       WHERE post_id = ?1
+         AND reporter_id = ?2
+         AND datetime(created_at) > datetime('now', '-2 minutes')
+       ORDER BY datetime(created_at) DESC
+       LIMIT 1`
+    ).bind(resolvedPostId, reporterId).first();
+    if (latestReport) {
+      return json({ error: "\u3053\u306E\u6295\u7A3F\u306F2\u5206\u306B1\u56DE\u307E\u3067\u901A\u5831\u3067\u304D\u307E\u3059\u3002" }, 429);
+    }
+    const alreadyReported = await env.DB.prepare(
+      `SELECT id
+       FROM reports
+       WHERE post_id = ?1
+         AND reporter_id = ?2
+         AND datetime(created_at) >= datetime('now', '-1 day')
+       LIMIT 1`
+    ).bind(resolvedPostId, reporterId).first();
+    if (alreadyReported) {
+      return json({ error: "\u3053\u306E\u6295\u7A3F\u306F\u3059\u3067\u306B\u901A\u5831\u6E08\u307F\u3067\u3059\u3002" }, 409);
+    }
+    resolvedThreadId = resolvedThreadId ?? post.threadId;
+  }
+  if (resolvedThreadId) {
+    const thread = await env.DB.prepare(
+      `SELECT id
+       FROM threads
+       WHERE id = ?1 AND is_deleted = 0`
+    ).bind(resolvedThreadId).first();
+    if (!thread) return json({ error: "Thread not found." }, 404);
+  }
+  if (!resolvedPostId && resolvedThreadId) {
+    const latestThreadReport = await env.DB.prepare(
+      `SELECT id
+       FROM reports
+       WHERE thread_id = ?1
+         AND post_id IS NULL
+         AND reporter_id = ?2
+         AND datetime(created_at) > datetime('now', '-2 minutes')
+       ORDER BY datetime(created_at) DESC
+       LIMIT 1`
+    ).bind(resolvedThreadId, reporterId).first();
+    if (latestThreadReport) {
+      return json({ error: "\u3053\u306E\u30B9\u30EC\u30C3\u30C9\u306F2\u5206\u306B1\u56DE\u307E\u3067\u901A\u5831\u3067\u304D\u307E\u3059\u3002" }, 429);
+    }
+    const alreadyReportedThread = await env.DB.prepare(
+      `SELECT id
+       FROM reports
+       WHERE thread_id = ?1
+         AND post_id IS NULL
+         AND reporter_id = ?2
+         AND datetime(created_at) >= datetime('now', '-1 day')
+       LIMIT 1`
+    ).bind(resolvedThreadId, reporterId).first();
+    if (alreadyReportedThread) {
+      return json({ error: "\u3053\u306E\u30B9\u30EC\u30C3\u30C9\u306F\u3059\u3067\u306B\u901A\u5831\u6E08\u307F\u3067\u3059\u3002" }, 409);
+    }
+  }
+  const created = await env.DB.prepare(
+    `INSERT INTO reports (thread_id, post_id, reporter_id, reason, details)
+     VALUES (?1, ?2, ?3, ?4, ?5)`
+  ).bind(resolvedThreadId, resolvedPostId, reporterId, reason, details).run();
+  let uniqueReporterCount = 0;
+  let autoDeleted = false;
+  let targetPosterUniqueReporterCount = 0;
+  let posterSanctionStage = 0;
+  let posterWriteBlockedUntil = null;
+  let posterRequireTurnstile = false;
+  if (resolvedPostId) {
+    const countRow = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT reporter_id) AS uniqueReporterCount
+       FROM reports
+       WHERE post_id = ?1
+         AND reporter_id IS NOT NULL
+         AND datetime(created_at) >= datetime('now', '-1 day')`
+    ).bind(resolvedPostId).first();
+    uniqueReporterCount = Number(countRow?.uniqueReporterCount || 0);
+    if (uniqueReporterCount >= AUTO_DELETE_THRESHOLD) {
+      const updated = await env.DB.prepare(
+        `UPDATE posts
+         SET is_deleted = 1
+         WHERE id = ?1
+           AND is_deleted = 0`
+      ).bind(resolvedPostId).run();
+      autoDeleted = Number(updated.meta.changes || 0) > 0;
+    }
+    if (targetPosterId) {
+      const posterCountRow = await env.DB.prepare(
+        `SELECT COUNT(DISTINCT r.reporter_id) AS uniqueReporterCount
+         FROM reports r
+         INNER JOIN posts p ON p.id = r.post_id
+         WHERE p.poster_id = ?1
+           AND r.reporter_id IS NOT NULL
+           AND datetime(r.created_at) >= datetime('now', '-1 day')`
+      ).bind(targetPosterId).first();
+      targetPosterUniqueReporterCount = Number(posterCountRow?.uniqueReporterCount || 0);
+      if (targetPosterUniqueReporterCount >= POSTER_STAGE1_THRESHOLD) {
+        posterSanctionStage = targetPosterUniqueReporterCount >= POSTER_STAGE2_THRESHOLD ? 2 : 1;
+        const blockHours = posterSanctionStage === 2 ? 72 : 24;
+        const reasonLabel = posterSanctionStage === 2 ? "auto-stage2-50-reports" : "auto-stage1-30-reports";
+        await env.DB.prepare(
+          `INSERT INTO poster_sanctions (
+             poster_id, write_block_until, require_turnstile, reason, created_at, updated_at
+           )
+           VALUES (?1, datetime('now', ?2), 1, ?3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+           ON CONFLICT(poster_id) DO UPDATE SET
+             write_block_until = CASE
+               WHEN poster_sanctions.write_block_until IS NULL THEN excluded.write_block_until
+               WHEN datetime(excluded.write_block_until) > datetime(poster_sanctions.write_block_until)
+                 THEN excluded.write_block_until
+               ELSE poster_sanctions.write_block_until
+             END,
+             require_turnstile = CASE
+               WHEN poster_sanctions.require_turnstile = 1 OR excluded.require_turnstile = 1
+                 THEN 1
+               ELSE 0
+             END,
+             reason = excluded.reason,
+             updated_at = CURRENT_TIMESTAMP`
+        ).bind(targetPosterId, `+${blockHours} hours`, reasonLabel).run();
+        const sanctionRow = await env.DB.prepare(
+          `SELECT
+             write_block_until AS writeBlockUntil,
+             require_turnstile AS requireTurnstile
+           FROM poster_sanctions
+           WHERE poster_id = ?1`
+        ).bind(targetPosterId).first();
+        posterWriteBlockedUntil = sanctionRow?.writeBlockUntil ?? null;
+        posterRequireTurnstile = Number(sanctionRow?.requireTurnstile || 0) === 1;
+      }
+    }
+  }
+  return json(
+    {
+      report: {
+        id: Number(created.meta.last_row_id),
+        threadId: resolvedThreadId,
+        postId: resolvedPostId,
+        reporterId,
+        reason,
+        status: "open"
+      },
+      moderation: {
+        uniqueReporterCount,
+        autoDeleted,
+        targetPosterId,
+        targetPosterUniqueReporterCount,
+        posterSanctionStage,
+        posterWriteBlockedUntil,
+        posterRequireTurnstile
+      }
+    },
+    201
+  );
+}, "onRequestPost");
+
+// api/threads/index.ts
+var DEFAULT_THREAD_THUMB_PATH = "/default-thread-thumb.webp";
+var RAPID_POST_THRESHOLD2 = 5;
+var THREAD_CREATE_COOLDOWN_MINUTES = 3;
+function resolveThreadThumbnailUrl(requestUrl, mediaKind, mediaUrl, requestedThumbnailUrl) {
+  if (requestedThumbnailUrl) return requestedThumbnailUrl;
+  if (mediaUrl && mediaKind === "image") return mediaUrl;
+  return new URL(DEFAULT_THREAD_THUMB_PATH, requestUrl).toString();
+}
+__name(resolveThreadThumbnailUrl, "resolveThreadThumbnailUrl");
+var onRequestGet6 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  const url = new URL(request.url);
+  const limit = parseLimit(url.searchParams.get("limit"), 50, 1, 100);
+  const pageCandidate = parseOptionalInt(url.searchParams.get("page"));
+  const page = pageCandidate && pageCandidate > 0 ? pageCandidate : 1;
+  const offset = (page - 1) * limit;
+  const includeNsfw = url.searchParams.get("nsfw") === "include" ? 1 : 0;
+  const query = `
+    SELECT
+      t.id,
+      t.title,
+      t.author_name AS authorName,
+      t.model_name AS modelName,
+      t.media_type AS mediaType,
+      t.nsfw,
+      t.is_locked AS isLocked,
+      t.created_at AS createdAt,
+      t.updated_at AS updatedAt,
+      (
+        SELECT COALESCE(p2.thumbnail_url, p2.media_url)
+        FROM posts p2
+        WHERE p2.thread_id = t.id
+          AND p2.is_deleted = 0
+          AND (p2.media_url IS NOT NULL OR p2.thumbnail_url IS NOT NULL)
+        ORDER BY datetime(p2.created_at) ASC, p2.id ASC
+        LIMIT 1
+      ) AS thumbnailUrl,
+      (
+        SELECT p2.media_mime
+        FROM posts p2
+        WHERE p2.thread_id = t.id
+          AND p2.is_deleted = 0
+          AND (p2.media_url IS NOT NULL OR p2.thumbnail_url IS NOT NULL)
+        ORDER BY datetime(p2.created_at) ASC, p2.id ASC
+        LIMIT 1
+      ) AS thumbnailMime,
+      COUNT(CASE WHEN p.is_deleted = 0 THEN p.id END) AS postCount
+    FROM threads t
+    LEFT JOIN posts p ON p.thread_id = t.id
+    WHERE t.is_deleted = 0
+      AND (?1 = 1 OR t.nsfw = 0)
+    GROUP BY t.id
+    ORDER BY datetime(t.updated_at) DESC
+    LIMIT ?2
+    OFFSET ?3
+  `;
+  const { results } = await env.DB.prepare(query).bind(includeNsfw, limit, offset).all();
+  const totalRow = await env.DB.prepare(
+    `SELECT COUNT(*) AS total
+     FROM threads
+     WHERE is_deleted = 0
+       AND (?1 = 1 OR nsfw = 0)`
+  ).bind(includeNsfw).first();
+  const total = Number(totalRow?.total || 0);
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  return json({
+    threads: results,
+    limit,
+    page,
+    total,
+    totalPages,
+    includeNsfw: includeNsfw === 1
+  });
+}, "onRequestGet");
+var onRequestPost6 = /* @__PURE__ */ __name(async ({ env, request }) => {
+  const payload = await readJson(request);
+  if (!payload) return json({ error: "Invalid JSON body." }, 400);
+  const title = cleanText(payload.title, 50);
+  const body = cleanLongText(payload.body, 500);
+  const authorName = cleanText(payload.authorName, 40) ?? "\u540D\u7121\u3057\u3061\u3083\u3093";
+  const modelName = cleanText(payload.modelName, 80);
+  const mediaType = validateMediaType(payload.mediaType);
+  const nsfw = parseBool(payload.nsfw);
+  const mediaUrl = cleanUrl(payload.mediaUrl, 2e3);
+  const mediaKey = cleanMediaKey(payload.mediaKey);
+  const thumbnailUrl = cleanUrl(payload.thumbnailUrl, 2e3);
+  const prompt = cleanLongText(payload.prompt, 4e3);
+  const workflowJson = cleanLongText(payload.workflowJson, 2e4);
+  const seed = parseOptionalInt(payload.seed);
+  const sampler = cleanText(payload.sampler, 80);
+  const steps = parseOptionalInt(payload.steps);
+  const cfgScale = parseOptionalFloat(payload.cfgScale);
+  const width = parseOptionalInt(payload.width);
+  const height = parseOptionalInt(payload.height);
+  const mediaMime = cleanText(payload.mediaMime, 120);
+  if (!title || title.length < 3) return json({ error: "Title must be at least 3 chars." }, 400);
+  if (!body && !mediaUrl && !mediaKey) return json({ error: "Body or media is required." }, 400);
+  if (payload.mediaKey !== void 0 && !mediaKey) {
+    return json({ error: "mediaKey is invalid." }, 400);
+  }
+  if (payload.mediaUrl && !mediaUrl) return json({ error: "mediaUrl must be a valid http/https URL." }, 400);
+  if (payload.thumbnailUrl && !thumbnailUrl) {
+    return json({ error: "thumbnailUrl must be a valid http/https URL." }, 400);
+  }
+  const posterId = await buildPosterId(request);
+  const sanction = await env.DB.prepare(
+    `SELECT
+       write_block_until AS writeBlockUntil,
+       require_turnstile AS requireTurnstile,
+       CASE
+         WHEN write_block_until IS NOT NULL
+           AND datetime(write_block_until) > datetime('now')
+         THEN 1
+         ELSE 0
+       END AS isBlocked
+     FROM poster_sanctions
+     WHERE poster_id = ?1
+     LIMIT 1`
+  ).bind(posterId).first();
+  if (Number(sanction?.isBlocked || 0) === 1) {
+    return json(
+      { error: `\u3053\u306EID\u306F\u6295\u7A3F\u505C\u6B62\u4E2D\u3067\u3059\u3002\u89E3\u9664\u4E88\u5B9A: ${sanction?.writeBlockUntil ?? "-"}` },
+      403
+    );
+  }
+  const sanctionRequiresTurnstile = Number(sanction?.requireTurnstile || 0) === 1 && Boolean(env.TURNSTILE_SECRET?.trim());
+  const recentThreadByPoster = await env.DB.prepare(
+    `SELECT p.id
+     FROM posts p
+     WHERE p.poster_id = ?1
+       AND datetime(p.created_at) >= datetime('now', ?2)
+       AND NOT EXISTS (
+         SELECT 1
+         FROM posts p2
+         WHERE p2.thread_id = p.thread_id
+           AND p2.id < p.id
+       )
+     LIMIT 1`
+  ).bind(posterId, `-${THREAD_CREATE_COOLDOWN_MINUTES} minutes`).first();
+  if (recentThreadByPoster) {
+    return json(
+      { error: `\u30B9\u30EC\u30C3\u30C9\u4F5C\u6210\u306F${THREAD_CREATE_COOLDOWN_MINUTES}\u5206\u306B1\u56DE\u307E\u3067\u3067\u3059\u3002\u3057\u3070\u3089\u304F\u5F85\u3063\u3066\u304F\u3060\u3055\u3044\u3002` },
+      429
+    );
+  }
+  const recentByPoster = await env.DB.prepare(
+    `SELECT COUNT(*) AS recentCount
+     FROM posts
+     WHERE poster_id = ?1
+       AND datetime(created_at) >= datetime('now', '-1 minute')`
+  ).bind(posterId).first();
+  const recentPostCount = Number(recentByPoster?.recentCount || 0);
+  const forceTurnstileByRate = recentPostCount + 1 >= RAPID_POST_THRESHOLD2;
+  const turnstileRequired = isTurnstileRequired(env) || forceTurnstileByRate || sanctionRequiresTurnstile;
+  const turnstile = await verifyTurnstileWhen(request, env, payload.turnstileToken, turnstileRequired);
+  if (!turnstile.ok) {
+    if (forceTurnstileByRate && !payload.turnstileToken?.trim()) {
+      return json({ error: "\u77ED\u6642\u9593\u306B\u6295\u7A3F\u304C\u96C6\u4E2D\u3057\u3066\u3044\u307E\u3059\u3002\u4EBA\u9593\u8A8D\u8A3C\u5F8C\u306B\u518D\u6295\u7A3F\u3057\u3066\u304F\u3060\u3055\u3044\u3002" }, 429);
+    }
+    if (sanctionRequiresTurnstile && !payload.turnstileToken?.trim()) {
+      return json({ error: "\u3053\u306EID\u306F\u4EBA\u9593\u8A8D\u8A3C\u5F8C\u306E\u307F\u6295\u7A3F\u3067\u304D\u307E\u3059\u3002" }, 403);
+    }
+    return json({ error: turnstile.error ?? "Human verification failed." }, 403);
+  }
+  let committedMedia;
+  try {
+    committedMedia = await resolveCommittedMedia(env, {
+      requestUrl: request.url,
+      mediaUrl,
+      mediaMime,
+      mediaKey
+    });
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : "Invalid media input." }, 400);
+  }
+  const finalMediaUrl = committedMedia.mediaUrl;
+  const finalMediaMime = committedMedia.mediaMime;
+  const mediaKind = detectMediaKind(finalMediaUrl, finalMediaMime);
+  const resolvedThumbnailUrl = resolveThreadThumbnailUrl(
+    request.url,
+    mediaKind,
+    finalMediaUrl,
+    thumbnailUrl
+  );
+  if (!body && !finalMediaUrl) return json({ error: "Body or media is required." }, 400);
+  if (mediaKind === "unknown") return json({ error: "Only image/video media is allowed." }, 400);
+  const deleteToken = createDeleteToken();
+  const deleteTokenHash = await sha256Hex(deleteToken);
+  const threadResult = await env.DB.prepare(
+    `INSERT INTO threads (title, author_name, model_name, media_type, nsfw)
+     VALUES (?1, ?2, ?3, ?4, ?5)`
+  ).bind(title, authorName, modelName, mediaType, nsfw).run();
+  const threadId = Number(threadResult.meta.last_row_id);
+  let firstPostId = null;
+  try {
+    const postResult = await env.DB.prepare(
+      `INSERT INTO posts (
+        thread_id, body, prompt, workflow_json, media_url, thumbnail_url,
+        media_mime, seed, sampler, steps, cfg_scale, width, height, author_name, nsfw, poster_id, delete_token_hash
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)`
+    ).bind(
+      threadId,
+      body ?? "",
+      prompt,
+      workflowJson,
+      finalMediaUrl,
+      resolvedThumbnailUrl,
+      finalMediaMime,
+      seed,
+      sampler,
+      steps,
+      cfgScale,
+      width,
+      height,
+      authorName,
+      nsfw,
+      posterId,
+      deleteTokenHash
+    ).run();
+    const insertedPostId = Number(postResult.meta.last_row_id || 0);
+    firstPostId = Number.isInteger(insertedPostId) && insertedPostId > 0 ? insertedPostId : null;
+  } catch {
+    try {
+      await env.DB.prepare(
+        `DELETE FROM threads
+         WHERE id = ?1`
+      ).bind(threadId).run();
+    } catch {
+    }
+    return json({ error: "Failed to create thread. Please retry." }, 500);
+  }
+  const created = await env.DB.prepare(
+    `SELECT id, title, author_name AS authorName, model_name AS modelName,
+            media_type AS mediaType, nsfw, is_locked AS isLocked,
+            created_at AS createdAt, updated_at AS updatedAt
+     FROM threads
+     WHERE id = ?1`
+  ).bind(threadId).first();
+  return json({ thread: created, firstPostId, deleteToken }, 201);
+}, "onRequestPost");
+
+// thread/[id].ts
+var onRequestGet7 = /* @__PURE__ */ __name(async ({ params, request }) => {
+  const idText = String(params.id ?? "").trim();
+  if (!/^\d+$/.test(idText)) {
+    return new Response("Invalid thread id.", { status: 400 });
+  }
+  const url = new URL(request.url);
+  url.pathname = "/thread";
+  url.search = "";
+  url.searchParams.set("id", idText);
+  return Response.redirect(url.toString(), 302);
+}, "onRequestGet");
+
+// _middleware.ts
+var onRequest = /* @__PURE__ */ __name(async (context) => {
+  if (context.request.method === "OPTIONS") {
+    return json({ ok: true });
+  }
+  const response = await context.next();
+  const headers = new Headers(response.headers);
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  headers.set("x-frame-options", "SAMEORIGIN");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}, "onRequest");
+
+// ../.wrangler/tmp/pages-nMjEsH/functionsRoutes-0.8764662636076302.mjs
+var routes = [
+  {
+    routePath: "/api/mod/reports/:id/resolve",
+    mountPath: "/api/mod/reports/:id",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost]
+  },
+  {
+    routePath: "/api/media/object",
+    mountPath: "/api/media",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet]
+  },
+  {
+    routePath: "/api/media/upload",
+    mountPath: "/api/media",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost2]
+  },
+  {
+    routePath: "/api/posts/:id",
+    mountPath: "/api/posts",
+    method: "DELETE",
+    middlewares: [],
+    modules: [onRequestDelete]
+  },
+  {
+    routePath: "/api/threads/:id",
+    mountPath: "/api/threads",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet2]
+  },
+  {
+    routePath: "/api/config",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet3]
+  },
+  {
+    routePath: "/api/contact-report",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost3]
+  },
+  {
+    routePath: "/api/health",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet4]
+  },
+  {
+    routePath: "/api/posts",
+    mountPath: "/api/posts",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost4]
+  },
+  {
+    routePath: "/api/reports",
+    mountPath: "/api/reports",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet5]
+  },
+  {
+    routePath: "/api/reports",
+    mountPath: "/api/reports",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost5]
+  },
+  {
+    routePath: "/api/threads",
+    mountPath: "/api/threads",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet6]
+  },
+  {
+    routePath: "/api/threads",
+    mountPath: "/api/threads",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost6]
+  },
+  {
+    routePath: "/thread/:id",
+    mountPath: "/thread",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet7]
+  },
+  {
+    routePath: "/",
+    mountPath: "/",
+    method: "",
+    middlewares: [onRequest],
+    modules: []
+  }
+];
+
+// C:/Users/adama/AppData/Local/npm-cache/_npx/d77349f55c2be1c0/node_modules/path-to-regexp/dist.es2015/index.js
+function lexer(str) {
+  var tokens = [];
+  var i = 0;
+  while (i < str.length) {
+    var char = str[i];
+    if (char === "*" || char === "+" || char === "?") {
+      tokens.push({ type: "MODIFIER", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === "\\") {
+      tokens.push({ type: "ESCAPED_CHAR", index: i++, value: str[i++] });
+      continue;
+    }
+    if (char === "{") {
+      tokens.push({ type: "OPEN", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === "}") {
+      tokens.push({ type: "CLOSE", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === ":") {
+      var name = "";
+      var j = i + 1;
+      while (j < str.length) {
+        var code = str.charCodeAt(j);
+        if (
+          // `0-9`
+          code >= 48 && code <= 57 || // `A-Z`
+          code >= 65 && code <= 90 || // `a-z`
+          code >= 97 && code <= 122 || // `_`
+          code === 95
+        ) {
+          name += str[j++];
+          continue;
+        }
+        break;
+      }
+      if (!name)
+        throw new TypeError("Missing parameter name at ".concat(i));
+      tokens.push({ type: "NAME", index: i, value: name });
+      i = j;
+      continue;
+    }
+    if (char === "(") {
+      var count = 1;
+      var pattern = "";
+      var j = i + 1;
+      if (str[j] === "?") {
+        throw new TypeError('Pattern cannot start with "?" at '.concat(j));
+      }
+      while (j < str.length) {
+        if (str[j] === "\\") {
+          pattern += str[j++] + str[j++];
+          continue;
+        }
+        if (str[j] === ")") {
+          count--;
+          if (count === 0) {
+            j++;
+            break;
+          }
+        } else if (str[j] === "(") {
+          count++;
+          if (str[j + 1] !== "?") {
+            throw new TypeError("Capturing groups are not allowed at ".concat(j));
+          }
+        }
+        pattern += str[j++];
+      }
+      if (count)
+        throw new TypeError("Unbalanced pattern at ".concat(i));
+      if (!pattern)
+        throw new TypeError("Missing pattern at ".concat(i));
+      tokens.push({ type: "PATTERN", index: i, value: pattern });
+      i = j;
+      continue;
+    }
+    tokens.push({ type: "CHAR", index: i, value: str[i++] });
+  }
+  tokens.push({ type: "END", index: i, value: "" });
+  return tokens;
+}
+__name(lexer, "lexer");
+function parse(str, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var tokens = lexer(str);
+  var _a = options.prefixes, prefixes = _a === void 0 ? "./" : _a, _b = options.delimiter, delimiter = _b === void 0 ? "/#?" : _b;
+  var result = [];
+  var key = 0;
+  var i = 0;
+  var path = "";
+  var tryConsume = /* @__PURE__ */ __name(function(type) {
+    if (i < tokens.length && tokens[i].type === type)
+      return tokens[i++].value;
+  }, "tryConsume");
+  var mustConsume = /* @__PURE__ */ __name(function(type) {
+    var value2 = tryConsume(type);
+    if (value2 !== void 0)
+      return value2;
+    var _a2 = tokens[i], nextType = _a2.type, index = _a2.index;
+    throw new TypeError("Unexpected ".concat(nextType, " at ").concat(index, ", expected ").concat(type));
+  }, "mustConsume");
+  var consumeText = /* @__PURE__ */ __name(function() {
+    var result2 = "";
+    var value2;
+    while (value2 = tryConsume("CHAR") || tryConsume("ESCAPED_CHAR")) {
+      result2 += value2;
+    }
+    return result2;
+  }, "consumeText");
+  var isSafe = /* @__PURE__ */ __name(function(value2) {
+    for (var _i = 0, delimiter_1 = delimiter; _i < delimiter_1.length; _i++) {
+      var char2 = delimiter_1[_i];
+      if (value2.indexOf(char2) > -1)
+        return true;
+    }
+    return false;
+  }, "isSafe");
+  var safePattern = /* @__PURE__ */ __name(function(prefix2) {
+    var prev = result[result.length - 1];
+    var prevText = prefix2 || (prev && typeof prev === "string" ? prev : "");
+    if (prev && !prevText) {
+      throw new TypeError('Must have text between two parameters, missing text after "'.concat(prev.name, '"'));
+    }
+    if (!prevText || isSafe(prevText))
+      return "[^".concat(escapeString(delimiter), "]+?");
+    return "(?:(?!".concat(escapeString(prevText), ")[^").concat(escapeString(delimiter), "])+?");
+  }, "safePattern");
+  while (i < tokens.length) {
+    var char = tryConsume("CHAR");
+    var name = tryConsume("NAME");
+    var pattern = tryConsume("PATTERN");
+    if (name || pattern) {
+      var prefix = char || "";
+      if (prefixes.indexOf(prefix) === -1) {
+        path += prefix;
+        prefix = "";
+      }
+      if (path) {
+        result.push(path);
+        path = "";
+      }
+      result.push({
+        name: name || key++,
+        prefix,
+        suffix: "",
+        pattern: pattern || safePattern(prefix),
+        modifier: tryConsume("MODIFIER") || ""
+      });
+      continue;
+    }
+    var value = char || tryConsume("ESCAPED_CHAR");
+    if (value) {
+      path += value;
+      continue;
+    }
+    if (path) {
+      result.push(path);
+      path = "";
+    }
+    var open = tryConsume("OPEN");
+    if (open) {
+      var prefix = consumeText();
+      var name_1 = tryConsume("NAME") || "";
+      var pattern_1 = tryConsume("PATTERN") || "";
+      var suffix = consumeText();
+      mustConsume("CLOSE");
+      result.push({
+        name: name_1 || (pattern_1 ? key++ : ""),
+        pattern: name_1 && !pattern_1 ? safePattern(prefix) : pattern_1,
+        prefix,
+        suffix,
+        modifier: tryConsume("MODIFIER") || ""
+      });
+      continue;
+    }
+    mustConsume("END");
+  }
+  return result;
+}
+__name(parse, "parse");
+function match(str, options) {
+  var keys = [];
+  var re = pathToRegexp(str, keys, options);
+  return regexpToFunction(re, keys, options);
+}
+__name(match, "match");
+function regexpToFunction(re, keys, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var _a = options.decode, decode = _a === void 0 ? function(x) {
+    return x;
+  } : _a;
+  return function(pathname) {
+    var m = re.exec(pathname);
+    if (!m)
+      return false;
+    var path = m[0], index = m.index;
+    var params = /* @__PURE__ */ Object.create(null);
+    var _loop_1 = /* @__PURE__ */ __name(function(i2) {
+      if (m[i2] === void 0)
+        return "continue";
+      var key = keys[i2 - 1];
+      if (key.modifier === "*" || key.modifier === "+") {
+        params[key.name] = m[i2].split(key.prefix + key.suffix).map(function(value) {
+          return decode(value, key);
+        });
+      } else {
+        params[key.name] = decode(m[i2], key);
+      }
+    }, "_loop_1");
+    for (var i = 1; i < m.length; i++) {
+      _loop_1(i);
+    }
+    return { path, index, params };
+  };
+}
+__name(regexpToFunction, "regexpToFunction");
+function escapeString(str) {
+  return str.replace(/([.+*?=^!:${}()[\]|/\\])/g, "\\$1");
+}
+__name(escapeString, "escapeString");
+function flags(options) {
+  return options && options.sensitive ? "" : "i";
+}
+__name(flags, "flags");
+function regexpToRegexp(path, keys) {
+  if (!keys)
+    return path;
+  var groupsRegex = /\((?:\?<(.*?)>)?(?!\?)/g;
+  var index = 0;
+  var execResult = groupsRegex.exec(path.source);
+  while (execResult) {
+    keys.push({
+      // Use parenthesized substring match if available, index otherwise
+      name: execResult[1] || index++,
+      prefix: "",
+      suffix: "",
+      modifier: "",
+      pattern: ""
+    });
+    execResult = groupsRegex.exec(path.source);
+  }
+  return path;
+}
+__name(regexpToRegexp, "regexpToRegexp");
+function arrayToRegexp(paths, keys, options) {
+  var parts = paths.map(function(path) {
+    return pathToRegexp(path, keys, options).source;
+  });
+  return new RegExp("(?:".concat(parts.join("|"), ")"), flags(options));
+}
+__name(arrayToRegexp, "arrayToRegexp");
+function stringToRegexp(path, keys, options) {
+  return tokensToRegexp(parse(path, options), keys, options);
+}
+__name(stringToRegexp, "stringToRegexp");
+function tokensToRegexp(tokens, keys, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var _a = options.strict, strict = _a === void 0 ? false : _a, _b = options.start, start = _b === void 0 ? true : _b, _c = options.end, end = _c === void 0 ? true : _c, _d = options.encode, encode = _d === void 0 ? function(x) {
+    return x;
+  } : _d, _e = options.delimiter, delimiter = _e === void 0 ? "/#?" : _e, _f = options.endsWith, endsWith = _f === void 0 ? "" : _f;
+  var endsWithRe = "[".concat(escapeString(endsWith), "]|$");
+  var delimiterRe = "[".concat(escapeString(delimiter), "]");
+  var route = start ? "^" : "";
+  for (var _i = 0, tokens_1 = tokens; _i < tokens_1.length; _i++) {
+    var token = tokens_1[_i];
+    if (typeof token === "string") {
+      route += escapeString(encode(token));
+    } else {
+      var prefix = escapeString(encode(token.prefix));
+      var suffix = escapeString(encode(token.suffix));
+      if (token.pattern) {
+        if (keys)
+          keys.push(token);
+        if (prefix || suffix) {
+          if (token.modifier === "+" || token.modifier === "*") {
+            var mod = token.modifier === "*" ? "?" : "";
+            route += "(?:".concat(prefix, "((?:").concat(token.pattern, ")(?:").concat(suffix).concat(prefix, "(?:").concat(token.pattern, "))*)").concat(suffix, ")").concat(mod);
+          } else {
+            route += "(?:".concat(prefix, "(").concat(token.pattern, ")").concat(suffix, ")").concat(token.modifier);
+          }
+        } else {
+          if (token.modifier === "+" || token.modifier === "*") {
+            throw new TypeError('Can not repeat "'.concat(token.name, '" without a prefix and suffix'));
+          }
+          route += "(".concat(token.pattern, ")").concat(token.modifier);
+        }
+      } else {
+        route += "(?:".concat(prefix).concat(suffix, ")").concat(token.modifier);
+      }
+    }
+  }
+  if (end) {
+    if (!strict)
+      route += "".concat(delimiterRe, "?");
+    route += !options.endsWith ? "$" : "(?=".concat(endsWithRe, ")");
+  } else {
+    var endToken = tokens[tokens.length - 1];
+    var isEndDelimited = typeof endToken === "string" ? delimiterRe.indexOf(endToken[endToken.length - 1]) > -1 : endToken === void 0;
+    if (!strict) {
+      route += "(?:".concat(delimiterRe, "(?=").concat(endsWithRe, "))?");
+    }
+    if (!isEndDelimited) {
+      route += "(?=".concat(delimiterRe, "|").concat(endsWithRe, ")");
+    }
+  }
+  return new RegExp(route, flags(options));
+}
+__name(tokensToRegexp, "tokensToRegexp");
+function pathToRegexp(path, keys, options) {
+  if (path instanceof RegExp)
+    return regexpToRegexp(path, keys);
+  if (Array.isArray(path))
+    return arrayToRegexp(path, keys, options);
+  return stringToRegexp(path, keys, options);
+}
+__name(pathToRegexp, "pathToRegexp");
+
+// C:/Users/adama/AppData/Local/npm-cache/_npx/d77349f55c2be1c0/node_modules/wrangler/templates/pages-template-worker.ts
+var escapeRegex = /[.+?^${}()|[\]\\]/g;
+function* executeRequest(request) {
+  const requestPath = new URL(request.url).pathname;
+  for (const route of [...routes].reverse()) {
+    if (route.method && route.method !== request.method) {
+      continue;
+    }
+    const routeMatcher = match(route.routePath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const mountMatcher = match(route.mountPath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const matchResult = routeMatcher(requestPath);
+    const mountMatchResult = mountMatcher(requestPath);
+    if (matchResult && mountMatchResult) {
+      for (const handler of route.middlewares.flat()) {
+        yield {
+          handler,
+          params: matchResult.params,
+          path: mountMatchResult.path
+        };
+      }
+    }
+  }
+  for (const route of routes) {
+    if (route.method && route.method !== request.method) {
+      continue;
+    }
+    const routeMatcher = match(route.routePath.replace(escapeRegex, "\\$&"), {
+      end: true
+    });
+    const mountMatcher = match(route.mountPath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const matchResult = routeMatcher(requestPath);
+    const mountMatchResult = mountMatcher(requestPath);
+    if (matchResult && mountMatchResult && route.modules.length) {
+      for (const handler of route.modules.flat()) {
+        yield {
+          handler,
+          params: matchResult.params,
+          path: matchResult.path
+        };
+      }
+      break;
+    }
+  }
+}
+__name(executeRequest, "executeRequest");
+var pages_template_worker_default = {
+  async fetch(originalRequest, env, workerContext) {
+    let request = originalRequest;
+    const handlerIterator = executeRequest(request);
+    let data = {};
+    let isFailOpen = false;
+    const next = /* @__PURE__ */ __name(async (input, init) => {
+      if (input !== void 0) {
+        let url = input;
+        if (typeof input === "string") {
+          url = new URL(input, request.url).toString();
+        }
+        request = new Request(url, init);
+      }
+      const result = handlerIterator.next();
+      if (result.done === false) {
+        const { handler, params, path } = result.value;
+        const context = {
+          request: new Request(request.clone()),
+          functionPath: path,
+          next,
+          params,
+          get data() {
+            return data;
+          },
+          set data(value) {
+            if (typeof value !== "object" || value === null) {
+              throw new Error("context.data must be an object");
+            }
+            data = value;
+          },
+          env,
+          waitUntil: workerContext.waitUntil.bind(workerContext),
+          passThroughOnException: /* @__PURE__ */ __name(() => {
+            isFailOpen = true;
+          }, "passThroughOnException")
+        };
+        const response = await handler(context);
+        if (!(response instanceof Response)) {
+          throw new Error("Your Pages function should return a Response");
+        }
+        return cloneResponse(response);
+      } else if ("ASSETS") {
+        const response = await env["ASSETS"].fetch(request);
+        return cloneResponse(response);
+      } else {
+        const response = await fetch(request);
+        return cloneResponse(response);
+      }
+    }, "next");
+    try {
+      return await next();
+    } catch (error) {
+      if (isFailOpen) {
+        const response = await env["ASSETS"].fetch(request);
+        return cloneResponse(response);
+      }
+      throw error;
+    }
+  }
+};
+var cloneResponse = /* @__PURE__ */ __name((response) => (
+  // https://fetch.spec.whatwg.org/#null-body-status
+  new Response(
+    [101, 204, 205, 304].includes(response.status) ? null : response.body,
+    response
+  )
+), "cloneResponse");
+export {
+  pages_template_worker_default as default
+};
+
+------formdata-undici-065319923472--

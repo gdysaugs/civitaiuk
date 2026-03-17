@@ -13,10 +13,10 @@ type Env = {
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   const maxUploadCandidate = parseOptionalInt(env.MAX_UPLOAD_BYTES);
   const maxUploadBytes =
-    maxUploadCandidate && maxUploadCandidate > 0 ? maxUploadCandidate : 25 * 1024 * 1024;
+    maxUploadCandidate && maxUploadCandidate > 0 ? maxUploadCandidate : 80 * 1024 * 1024;
 
   return json({
-    appName: env.APP_NAME ?? "civitai.uk",
+    appName: env.APP_NAME ?? "AI動画のレシピ",
     turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
     turnstileRequired: isTurnstileRequired(env),
     uploadsEnabled: Boolean(env.MEDIA),

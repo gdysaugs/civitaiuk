@@ -693,10 +693,24 @@ async function deleteOwnPost(postId) {
   const ok = window.confirm(`投稿 #${postId} を削除します。よろしいですか？`);
   if (!ok) return;
 
-  await request(`/api/posts/${postId}`, {
-    method: "DELETE",
-    body: JSON.stringify({ deleteToken })
-  });
+  try {
+    await request(`/api/posts/${postId}`, {
+      method: "DELETE",
+      body: JSON.stringify({ deleteToken })
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || "");
+    const tokenMismatch =
+      message.includes("Invalid delete token") ||
+      message.includes("cannot be deleted by user token") ||
+      message.includes("Post not found");
+    if (tokenMismatch) {
+      forgetDeleteToken(postId);
+      await loadThread();
+      throw new Error("この投稿の削除権限がないため、削除ボタンを更新しました。");
+    }
+    throw error;
+  }
 
   forgetDeleteToken(postId);
   await loadThread();

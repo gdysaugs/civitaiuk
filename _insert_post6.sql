@@ -1,0 +1,212 @@
+UPDATE posts
+SET thumbnail_url = '/post-5-thumb.webp',
+    media_mime = 'image/webp'
+WHERE thread_id = 5
+  AND is_deleted = 0;
+
+INSERT INTO threads (title, author_name, media_type, nsfw, is_locked, is_deleted)
+VALUES ('カメラアングル・構図プロンプト集（再編集版）', 'owner', 'image', 0, 1, 0);
+
+INSERT INTO posts (
+  thread_id,
+  body,
+  media_url,
+  thumbnail_url,
+  media_mime,
+  author_name,
+  nsfw,
+  is_deleted
+) VALUES (
+  last_insert_rowid(),
+  'カメラアングル・構図タグを、実運用しやすい形で再編集した一覧です。
+各タグはそのままコピーして使えるように、英語タグ + 日本語訳でまとめています。
+
+## 目次
+- アングル (28件)
+- フレーミング (20件)
+- 視点・パース (17件)
+- ショットの種類 (13件)
+- ビューポイント (9件)
+- フォーカス・焦点 (6件)
+- その他 (47件)
+
+## 使い方のコツ
+- まずは1つのアングルタグを軸にする
+- 次に構図や視点タグを1〜2個だけ足す
+- 破綻したらタグ数を減らして再生成する
+
+## アングル (28件)
+
+- front_view_breasts：正面からのバストアップ（迫力の胸元 / 豊満な曲線美 / 視線が奪われる谷間）
+- side_view_breasts：横からのバスト（サイドバスト / 曲線美の強調 / 豊かな膨らみ）
+- side_view：横顔（横向き全身 / 横からの視点 / ドラマティックなシルエット）
+- upper_body：上半身（腰上 / 表情と仕草 / キャラクターの個性）
+- profile：横顔（真横 / 端麗な側面 / 静謐な美しさ）
+- from_below：ローアングル（煽り / 見上げる構図 / 圧倒的な存在感）
+- pantyshot：パンチラ（股間アップ / 秘められた領域 / 無防備な誘惑）
+- ass_focus：ヒップアップ（お尻強調 / 魅惑のヒップライン / 官能的な曲線）
+- straight-on：正面（真正面 / 視線が合う / ダイレクトな対峙）
+- pussy_focus：股間アップ（秘部強調 / 禁断の領域 / 肌の官能）
+- upshot：ローアングル（煽り構図 / 見上げる視線 / 支配的な存在感）
+- downshot_breasts：俯瞰胸元（胸の谷間強調 / 無防備な胸元 / 誘惑の視線）
+- upshot_breasts：煽り胸元（迫力のバスト / 見上げる豊満 / 溢れる存在感）
+- upshot_ass：ローアングルヒップ（煽り臀部 / 魅惑のヒップライン / 躍動の曲線）
+- downshot_ass：俯瞰ヒップ（後ろ姿の魅力 / 無邪気な臀部 / 誘う曲線美）
+- cowboy_shot：カウボーイショット（膝上構図 / 人物の佇まい / スタイル際立つ）
+- between_legs：脚の間から（覗き見アングル / 禁断の視線 / 秘められた世界）
+- navel_focus：へそ強調（腹部の神秘 / センシティブな肌 / 柔らかな曲線）
+- under_skirt：スカートの中（覗き見アングル / 禁断の領域 / 秘められた誘惑）
+- under_shot：見上げる構図（煽り視点 / 威圧感のある / 支配的な存在）
+- over_shoulder：背中越し（肩越し構図 / 視線の先 / 二人だけの世界）
+- three_quarter_view：斜め向き（半身構図 / 躍動感のあるポーズ / 奥行きのある表情）
+- upshorts：煽り気味のショートパンツ（太もも強調 / 無防備な脚線美 / 魅惑のヒップライン）
+- pov_across_table：テーブル越し（対面構図 / 向かい合う視線 / 二人の距離感）
+- pov_across_bed：ベッド越し（寝室の視線 / 目覚めの瞬間 / プライベートな時間）
+- dutch_angle：斜め構図（傾いた画面 / 不穏な空気感 / 心理的な動揺）
+- top-down_bottom-up：真上からの視点（真下からの視点 / 俯瞰構図 / 煽り構図）
+- perspective：遠近感（パース / 奥行きのある空間 / 臨場感）
+
+## フレーミング (20件)
+
+- wide_shot：広角全体像（引きの構図 / 風景の中の人物 / 壮大な情景）
+- lower_body_only, full_body：全身の脚部強調（足元からの視線 / 全身像の中の脚 / 動きの表現）
+- close-up_legs：脚のクローズアップ（太ももアップ / ふくらはぎ強調 / 絶対領域）
+- portrait：顔アップ（上半身ポートレート / 表情重視 / 視線誘導）
+- cropped_torso：胴体アップ（胸部クローズアップ / ウエスト強調 / 身体のライン）
+- head_out_of_frame：頭部フレーム外（顔なし構図 / 身体性強調 / 視線外の存在）
+- hip_focus：ヒップアップ（魅惑のヒップライン / 曲線美 / 挑発的な後ろ姿）
+- no_feet：足元なし（身体の一部 / 上半身強調 / 視線誘導）
+- eye_focus：瞳のクローズアップ（視線 / 表情強調 / 感情の表出）
+- cropped_arms：腕なし（腕が切れた構図 / 上半身アップ / ポーズの強調）
+- feet_only：足元アップ（足フェチ / 足の表現 / 繊細な足元）
+- cropped_head：顔なし構図（首から下 / 胴体強調 / 神秘的な雰囲気）
+- full_hair_view：髪全体（なびく髪 / 豊かな髪 / 髪の質感）
+- feet_out_of_frame：足が画面外（足元が見えない / 上半身集中 / 空間の広がり）
+- cropped_legs：脚が切れた構図（太もも強調 / 脚線美 / 身体の一部）
+- eyes_out_of_frame：目が見えない（顔の一部 / 視線の先 / 感情の奥ゆき）
+- arm_out_of_frame：画面外の腕（フレームアウト / 見切れる腕 / 引き込まれる動き）
+- cropped_shoulders：肩見切れ（肩入れ構図 / 胸元アップ / 存在感の強調）
+- partially_underwater_shot：水中表現（水面越し / 水に揺れる / 幻想的な水景）
+- close-up_hair：髪のクローズアップ（髪の質感 / 毛束の表現 / 柔らかな髪の毛）
+
+## 視点・パース (17件)
+
+- from_above：俯瞰（見下ろし / 無防備な視線 / 支配的な構図）
+- aiming_at_viewer：銃口を向ける（狙撃 / 緊迫の瞬間 / 一触即発）
+- futanari_pov：フタナリ視点（当事者視点 / 彼女の視界 / 内なる衝動）
+- pov：一人称視点（主観視点 / 私の目 / 没入感の極致）
+- pov_peephole：覗き見（隠し撮り / 禁断の視線 / 背徳の誘惑）
+- pov_breasts：迫力の胸元（バストアップPOV / 揺れる視界 / 豊満な誘惑）
+- firing_at_viewer：銃撃（発砲シーン / 炸裂する迫力 / 銃弾の雨）
+- dollhouse_view：箱庭視点（ミニチュアビュー / 全知の視点 / 運命の舞台）
+- fixed-point_camera：定点カメラ（据え置きカメラ / 無言の観察者 / 時間の流れ）
+- pov_adoring：見上げる視線（慕わしい瞳 / 愛おしいまなざし / 跪くような構図）
+- female_pov：女性視点（恋人の視線 / 見つめる彼 / 包み込むような眼差し）
+- foreshortening：パース強調（奥行きのある構図 / 迫力の広角表現 / 視線誘導）
+- shaft_look：股下からの視線（挑発的なアングル / 絶対領域 / 禁断の眺め）
+- rear-view_mirror：バックミラー越し（鏡越しの視線 / 後方からの視線 / 秘密の覗き見）
+- up_sleeve：袖口からのぞく（密着する視線 / 隠された肌 / 秘密の領域）
+- pec_pov_(meme)：迫力の胸元（胸筋アングル / 鍛えられた肉体 / 雄々しい胸板）
+- viewer_holding_leash：リードを持つ視点（支配と服従 / 主従関係 / 繋がれた絆）
+
+## ショットの種類 (13件)
+
+- close-up_neck：首元アップ（うなじの美しさ / 色香漂う首筋 / 繊細な曲線）
+- close-up_skin：肌の質感アップ（素肌の美しさ / 生々しい肌触り / 触れたくなる衝動）
+- knees_up：膝上（優雅な立ち姿 / ふくらはぎの曲線美 / 躍動感ある構図）
+- view_between_legs：股下アングル（秘められた領域 / 絶対領域の誘惑 / 挑発的な視線）
+- thigh_focus：太ももアップ（魅惑の太もも / 絶対領域 / 肉感的な曲線）
+- leg_focus：脚アップ（流れるような脚線美 / すらりとした肢体 / 優雅な歩み）
+- close-up：クローズアップ（感情の吐露 / 魂の眼差し / 息遣いを感じる距離）
+- full_body_skin：全身肌（無垢な肌 / 剥き出しの誘惑 / 生命の輝き）
+- mugshot：証明写真風（素顔の記録 / 真正面からの視線 / ありのままの姿）
+- footwear_focus：足元アップ（足元の物語 / ステップの記憶 / 存在感ある一足）
+- back_focus：背中アップ（語る背中 / 広がる世界 / 未来への展望）
+- extreme_close-up：超接写（息をのむディテール / 肌の温度 / 秘められた世界）
+- close-up_clothing：服のクローズアップ（質感表現 / ディテール強調 / 肌の透け感）
+
+## ビューポイント (9件)
+
+- front_view：正面からのバストアップ（まっすぐな視線 / 対峙する構図 / 心の距離感）
+- eye_level：アイレベル（等身大の視点 / 共感の構図 / 日常の風景）
+- side_profile：横顔（伏し目がち / 横からの視線 / 憂いを帯びた表情）
+- back_view：後ろ姿（背中で語る / 見送る視線 / 寂寥感）
+- bird''s_eye_view：俯瞰（見下ろす視点 / 全体像 / 無防備な姿）
+- extended_downblouse：迫力の胸元（谷間の強調 / 見下ろすアングル / 挑発的な視線）
+- pov_hands：手のクローズアップ（一人称視点 / 触れる指先 / 感情の表現）
+- isometric：アイソメトリック（斜め上からの視点 / ゲーム画面 / ミニチュアの世界）
+- side_hair_view：横顔と髪（髪の流れ / 風になびく髪 / 繊細な表情）
+
+## フォーカス・焦点 (6件)
+
+- close-up_hands：手のクローズアップ（指先の表現 / 繊細な仕草 / 感情を語る手）
+- breast_focus：胸元アップ（胸部強調 / 迫力の胸元 / 魅惑の谷間）
+- weapon_focus：武器強調（銃器クローズアップ / 刃の輝き / 戦いの予感）
+- pectoral_focus：胸元アップ（バスト強調 / 肉感的な胸部 / 魅惑の谷間）
+- cloud_focus：空のクローズアップ（雲の表現 / 幻想的な空 / 大気のドラマ）
+- reflection_focus：反射強調（水面の映り込み / 鏡像 / ガラス越しの世界）
+
+## その他 (47件)
+
+- sharp_focus：シャープフォーカス（くっきり描写 / 被写界深度 / 視線誘導）
+- close-up_armpits：脇のクローズアップ（脇見せ / 無防備な脇 / 色香漂う）
+- nipple_close-up：乳首アップ（胸元の強調 / 秘めたる魅力 / 官能的な接写）
+- close-up_eyes：瞳のクローズアップ（眼差し / 目の描写 / 感情の窓）
+- knee-high_focus：膝丈ショット（膝下構図 / 脚線美 / 躍動感のある脚）
+- close-up_lips：唇のクローズアップ（口元の強調 / 艶やかな唇 / 誘惑の口元）
+- close-up_breasts：胸元アップ（迫力のバスト / 谷間強調 / 豊満な曲線美）
+- crotch_focus：股間強調（魅惑のヒップライン / 太ももアップ / 秘めたる領域）
+- looking_at_viewer, pleading_eyes, begging_eyes：上目遣い（懇願の瞳 / 見つめる視線 / 訴えかける眼差し）
+- facing_viewer：真正面（対峙する瞳 / 揺るぎない存在感 / 全身の佇まい）
+- three_quarter_profile：斜め向き（半身の美しさ / 奥行きのある構図 / 繊細な輪郭）
+- headshot：顔アップ（表情クローズアップ / 瞳の輝き / キャラクターの魂）
+- soft_focus：ふんわり加工（柔らかな描写 / 夢幻的な雰囲気 / 光のベール）
+- mouth_focus：口元アップ（唇強調 / 誘惑の口元 / 囁きの気配）
+- pov_legs：足元視点（太もも越しの視線 / 独占的な視線 / プライベートな空間）
+- blurry_foreground：前景ぼかし（手前ぼかし / 奥行き表現 / 覗き見効果）
+- pov_crotch：股間アップ（股下からの視線 / 密やかな領域 / 誘惑の境界線）
+- bokeh：ボケ（前ボケ / 玉ボケ / 夢幻の背景）
+- fisheye：魚眼レンズ（歪んだ世界 / 超広角視点 / 異空間への誘い）
+- pillarboxed：ピラーボックス（縦長画面 / 映画的構図 / 物語の枠）
+- armpit_focus：脇アップ（脇の魅力 / 肌の覗く隙間 / 秘めたる曲線美）
+- fish-eye_lens：魚眼レンズ（広角の歪み / パノラマ視点 / 世界を飲み込む）
+- back_view, flowing_hair：後ろ姿（なびく髪 / 余韻を残す背中 / 物語の予感）
+- side_angle_leg_view：脚の横顔（横からの太もも / 脚線美 / しなやかな曲線）
+- upshot_legs：足元からの煽り（見上げる脚 / 迫力の太もも / 支配的な脚線）
+- full_body, legs_emphasized：脚強調全身（全身脚長 / 美脚の全身像 / すらりとした立ち姿）
+- from_behind：後ろ姿（背中越しの物語 / 物憂げな背中 / 秘められた感情）
+- from_side：横顔（側面からの視点 / 静かな横顔 / 思索の表情）
+- depth_of_field：被写界深度（ボケ表現 / 際立つ主役 / 夢幻の空間）
+- pov_cheek_grabbing_(meme)：頬つねり（頬を掴む視点 / 無防備な表情 / いたずらな愛情）
+- object_focus：物体フォーカス（小物に注目 / 語る小道具 / 物語の鍵）
+- book_focus：本にフォーカス（読書風景 / 知的な横顔 / 静寂の読書時間）
+- kabedon_on_viewer：壁ドン（迫る距離 / 見下ろされる / ドキドキの接近）
+- lap_pov：膝枕（膝の上からの視点 / 安らぎの瞬間 / 甘い夢心地）
+- ear_focus：耳にフォーカス（耳元 / 繊細な触れ合い / 誘惑の耳元）
+- from_outside：窓越し（覗き見 / 外部からの視点 / 隔てられた世界）
+- very_wide_shot：超広角（壮大な風景 / ドラマチックな空間 / 物語の始まり）
+- hand_focus：手元クローズアップ（繊細な仕草 / 物語を語る手 / 触れる肌）
+- hair_focus：髪のクローズアップ（艶めく髪 / 風になびく髪 / 触れたくなる髪）
+- letterboxed：シネマスコープ（劇的な演出 / 物語の奥行き / 広がる世界観）
+- implied_pantyshot：魅惑のヒップライン（無防備な誘惑 / 視線を奪う曲線 / 想像力を掻き立てる）
+- taker_pov：主観視点（彼氏目線 / 臨場感あふれる / 目の前の存在）
+- zooming_in：ズームアップ（感情の強調 / 視線の集中 / 緊迫感の演出）
+- eyewear_view：眼鏡越し（知的な魅力 / クールな眼差し / 秘密の視点）
+- forced_perspective：強制遠近法（驚きの構図 / 視覚トリック / 異次元の世界）
+- pov_doorway：ドア越しの視点（秘密の覗き見 / 物語の導入 / 隠された真実）
+- against_fourth_wall：カメラ目線（視線が絡む瞬間 / 秘密の共有 / 心の扉が開く）
+
+## すぐ使える組み立て例
+
+- dramatic low angle：`from_below, dutch angle, cinematic shot`
+- intimate face framing：`close-up, looking_at_viewer, hand_focus`
+- powerful perspective：`foreshortening, dynamic angle, wide shot`
+- voyeur mood：`pov_peephole, doorway framing, soft focus`
+',
+  NULL,
+  '/post-6-thumb.webp',
+  'image/webp',
+  'owner',
+  0,
+  0
+);
