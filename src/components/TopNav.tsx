@@ -102,9 +102,6 @@ export function TopNav() {
         </div>
       ) : (
         <nav className="top-nav__links">
-          <NavLink to="/t2v" className={({ isActive }) => `top-nav__link${isActive ? ' is-active' : ''}`}>
-            T2V
-          </NavLink>
           <NavLink to="/video" className={({ isActive }) => `top-nav__link${isActive ? ' is-active' : ''}`}>
             I2V
           </NavLink>

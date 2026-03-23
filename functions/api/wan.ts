@@ -1,8 +1,6 @@
 import workflowI2VTemplate from './wan-workflow-i2v.json'
-import workflowT2VTemplate from './wan-workflow-t2v.json'
 import workflowAnimateTemplate from './wan-workflow-animate.json'
 import nodeMapI2VTemplate from './wan-node-map-i2v.json'
-import nodeMapT2VTemplate from './wan-node-map-t2v.json'
 import nodeMapAnimateTemplate from './wan-node-map-animate.json'
 import { createClient, type User } from '@supabase/supabase-js'
 import { buildCorsHeaders, isCorsBlocked } from '../_shared/cors'
@@ -11,7 +9,6 @@ import { isUnderageImage } from '../_shared/rekognition'
 type Env = {
   RUNPOD_API_KEY: string
   RUNPOD_WAN_RAPID_FASTMOVE_ENDPOINT_URL?: string
-  RUNPOD_WAN_T2V_ENDPOINT_URL?: string
   RUNPOD_ENDPOINT_URL?: string
   RUNPOD_WAN_ENDPOINT_URL?: string
   COMFY_ORG_API_KEY?: string
@@ -31,12 +28,6 @@ const jsonResponse = (body: unknown, status = 200, headers: HeadersInit = {}) =>
   })
 
 const resolveEndpoint = (env: Env, mode: GenerationMode = 'i2v') => {
-  if (mode === 't2v') {
-    return (env.RUNPOD_WAN_T2V_ENDPOINT_URL ?? env.RUNPOD_WAN_ENDPOINT_URL ?? env.RUNPOD_ENDPOINT_URL)?.replace(
-      /\/$/,
-      '',
-    )
-  }
   if (mode === 'i2v') {
     return (
       env.RUNPOD_WAN_RAPID_FASTMOVE_ENDPOINT_URL ??
@@ -70,7 +61,7 @@ type NodeMap = Partial<{
   end_step: NodeMapValue
 }>
 
-type GenerationMode = 'i2v' | 't2v' | 'animate'
+type GenerationMode = 'i2v' | 'animate'
 
 const SIGNUP_TICKET_GRANT = 3
 const DEFAULT_VIDEO_TICKET_COST = 1
@@ -85,11 +76,11 @@ const MAX_DIMENSION = 3000
 const MIN_CFG = 0
 const MAX_CFG = 10
 const FIXED_FPS = 10
-// Wan i2v/t2v length is most stable with 4n+1 frames.
+// Wan i2v length is most stable with 4n+1 frames.
 const VIDEO_DURATION_OPTIONS = [
-  { seconds: 5, frames: 61, ticketCost: 1 },
-  { seconds: 7, frames: 81, ticketCost: 3 },
-  { seconds: 9, frames: 101, ticketCost: 5 },
+  { seconds: 5, frames: 53, ticketCost: 1 },
+  { seconds: 7, frames: 73, ticketCost: 3 },
+  { seconds: 9, frames: 93, ticketCost: 5 },
 ] as const
 const FIXED_ANIMATE_FRAMES = 77
 const INTERNAL_SERVER_ERROR_MESSAGE = '\u30b5\u30fc\u30d0\u30fc\u5185\u90e8\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f\u3002\u6642\u9593\u3092\u304a\u3044\u3066\u518d\u5ea6\u304a\u8a66\u3057\u304f\u3060\u3055\u3044\u3002'
@@ -200,18 +191,14 @@ const requireOwnedUsageChargeEvent = async (
   return { event }
 }
 const getWorkflowTemplate = async (mode: GenerationMode) =>
-  (mode === 't2v'
-    ? workflowT2VTemplate
-    : mode === 'animate'
-      ? workflowAnimateTemplate
-      : workflowI2VTemplate) as Record<string, unknown>
+  (mode === 'animate'
+    ? workflowAnimateTemplate
+    : workflowI2VTemplate) as Record<string, unknown>
 
 const getNodeMap = async (mode: GenerationMode) =>
-  (mode === 't2v'
-    ? nodeMapT2VTemplate
-    : mode === 'animate'
-      ? nodeMapAnimateTemplate
-      : nodeMapI2VTemplate) as NodeMap
+  (mode === 'animate'
+    ? nodeMapAnimateTemplate
+    : nodeMapI2VTemplate) as NodeMap
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
@@ -687,7 +674,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: ERROR_ID_REQUIRED }, 400, corsHeaders)
   }
   const modeParam = String(url.searchParams.get('mode') ?? '').toLowerCase()
-  const statusMode: GenerationMode = modeParam === 't2v' ? 't2v' : modeParam === 'animate' ? 'animate' : 'i2v'
+  if (modeParam === 't2v') {
+    return jsonResponse({ error: 'mode "t2v" is no longer supported.' }, 400, corsHeaders)
+  }
+  const statusMode: GenerationMode = modeParam === 'animate' ? 'animate' : 'i2v'
   if (!env.RUNPOD_API_KEY) {
     return jsonResponse({ error: 'RUNPOD_API_KEY is not set.' }, 500, corsHeaders)
   }
@@ -697,7 +687,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(
       {
         error:
-          'WAN endpoint is not set. Configure RUNPOD_WAN_T2V_ENDPOINT_URL for t2v or RUNPOD_WAN_RAPID_FASTMOVE_ENDPOINT_URL for i2v.',
+          'WAN endpoint is not set. Configure RUNPOD_WAN_RAPID_FASTMOVE_ENDPOINT_URL for i2v and RUNPOD_WAN_ENDPOINT_URL for animate.',
       },
       500,
       corsHeaders,
@@ -809,8 +799,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: 'workflow overrides are not allowed.' }, 400, corsHeaders)
   }
   const mode = String(input?.mode ?? 'i2v').toLowerCase()
-  if (mode !== 'i2v' && mode !== 't2v' && mode !== 'animate') {
-    return jsonResponse({ error: 'mode must be "i2v", "t2v", or "animate".' }, 400, corsHeaders)
+  if (mode === 't2v') {
+    return jsonResponse({ error: 'mode "t2v" is no longer supported.' }, 400, corsHeaders)
+  }
+  if (mode !== 'i2v' && mode !== 'animate') {
+    return jsonResponse({ error: 'mode must be "i2v" or "animate".' }, 400, corsHeaders)
   }
   const generationMode = mode as GenerationMode
   const endpoint = resolveEndpoint(env, generationMode)
@@ -818,13 +811,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(
       {
         error:
-          'WAN endpoint is not set. Configure RUNPOD_WAN_T2V_ENDPOINT_URL for t2v or RUNPOD_WAN_RAPID_FASTMOVE_ENDPOINT_URL for i2v.',
+          'WAN endpoint is not set. Configure RUNPOD_WAN_RAPID_FASTMOVE_ENDPOINT_URL for i2v and RUNPOD_WAN_ENDPOINT_URL for animate.',
       },
       500,
       corsHeaders,
     )
   }
-  const isT2V = mode === 't2v'
   const isAnimate = mode === 'animate'
   const durationResult = isAnimate
     ? { option: null as null | VideoDurationOption, error: null as string | null }
@@ -834,7 +826,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   const videoDurationOption = durationResult.option ?? DEFAULT_VIDEO_DURATION_OPTION
   const imageValue = input?.image_base64 ?? input?.image ?? input?.image_url
-  if (!isT2V && !imageValue) {
+  if (!isAnimate && !imageValue) {
     return jsonResponse({ error: ERROR_I2V_IMAGE_REQUIRED }, 400, corsHeaders)
   }
   const videoValue = input?.video_base64 ?? input?.video ?? input?.video_url
@@ -873,14 +865,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     )
   }
 
-  if (!isT2V && !imageBase64) {
+  if (!isAnimate && !imageBase64) {
     return jsonResponse({ error: 'image is empty.' }, 400, corsHeaders)
   }
   if (isAnimate && !videoBase64) {
     return jsonResponse({ error: 'video is empty.' }, 400, corsHeaders)
   }
 
-  if (!isT2V) {
+  if (!isAnimate) {
     try {
       if (await isUnderageImage(imageBase64, env)) {
         return jsonResponse({ error: UNDERAGE_BLOCK_MESSAGE }, 400, corsHeaders)

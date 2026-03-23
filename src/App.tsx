@@ -3,7 +3,6 @@ import type { Session } from '@supabase/supabase-js'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { supabase } from './lib/supabaseClient'
 import { Account } from './pages/Account'
-import { Camera } from './pages/Camera'
 import { Image } from './pages/Image'
 import { Purchase } from './pages/Purchase'
 import { Terms } from './pages/Terms'
@@ -49,7 +48,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<RedirectToVideoPreservingLocation />} />
-      <Route path="/t2v" element={<Camera />} />
+      <Route path="/t2v" element={<Navigate to="/video" replace />} />
       <Route path="/image" element={<Image />} />
       <Route path="/purchase" element={<PurchaseRouteGate />} />
       <Route path="/video" element={<Video />} />

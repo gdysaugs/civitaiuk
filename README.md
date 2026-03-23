@@ -1,6 +1,6 @@
 # dooble
 
-AI video app (I2V / T2V / Animate) running on **Cloudflare Pages + Pages Functions**.
+AI video app (I2V / Animate) running on **Cloudflare Pages + Pages Functions**.
 
 Official URL: https://aidooble.org
 
