@@ -27,12 +27,12 @@
         0
       ],
       "noise_seed": 0,
-      "steps": 4,
+      "steps": 6,
       "start_at_step": 2,
       "add_noise": "disable",
       "control_after_generate": "fixed",
       "cfg": 1,
-      "sampler_name": "euler",
+      "sampler_name": "uni_pc_bh2",
       "scheduler": "simple",
       "end_at_step": 10000,
       "return_with_leftover_noise": "disable"
@@ -45,10 +45,10 @@
         "8",
         0
       ],
-      "frame_rate": 10,
+      "frame_rate": 12,
       "loop_count": 0,
       "filename_prefix": "video/sharkai_i2v_smoothmix",
-      "format": "video/nvenc_h264-mp4",
+      "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 14,
       "save_metadata": true,
@@ -74,7 +74,7 @@
     "class_type": "ModelSamplingSD3",
     "inputs": {
       "model": [
-        "77",
+        "111",
         0
       ],
       "shift": 8
@@ -84,7 +84,7 @@
     "class_type": "ModelSamplingSD3",
     "inputs": {
       "model": [
-        "103",
+        "112",
         0
       ],
       "shift": 8
@@ -155,12 +155,12 @@
         2
       ],
       "noise_seed": 0,
-      "steps": 4,
+      "steps": 6,
       "end_at_step": 2,
       "add_noise": "enable",
       "control_after_generate": "fixed",
       "cfg": 1,
-      "sampler_name": "euler",
+      "sampler_name": "uni_pc_bh2",
       "scheduler": "simple",
       "start_at_step": 0,
       "return_with_leftover_noise": "enable"
@@ -176,14 +176,14 @@
   "77": {
     "class_type": "UNETLoader",
     "inputs": {
-      "unet_name": "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors",
+      "unet_name": "smoothMixWan2214BI2V_i2vV20High.safetensors",
       "weight_dtype": "default"
     }
   },
   "103": {
     "class_type": "UNETLoader",
     "inputs": {
-      "unet_name": "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8L.safetensors",
+      "unet_name": "smoothMixWan2214BI2V_i2vV20Low.safetensors",
       "weight_dtype": "default"
     }
   },
@@ -240,4 +240,3 @@
     }
   }
 }
-

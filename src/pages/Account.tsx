@@ -20,6 +20,7 @@ export function Account() {
   const handleSignOut = async () => {
     if (!supabase) return
     await supabase.auth.signOut({ scope: 'local' })
+    window.location.assign('/')
   }
 
   if (!session) {
@@ -28,7 +29,7 @@ export function Account() {
         <div className="account-card">
           <h1>アカウント</h1>
           <p>ログインしてアカウントを表示してください。</p>
-          <a className="primary" href="/video">
+          <a className="primary" href="/">
             アプリに戻る
           </a>
         </div>

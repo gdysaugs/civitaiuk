@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { NavLink } from 'react-router-dom'
 import { isAuthConfigured, supabase } from '../lib/supabaseClient'
@@ -84,12 +84,13 @@ export function TopNav() {
 
   const isLoggedIn = Boolean(session)
   const showGuestHeader = isAuthReady && !isLoggedIn
+  const homePath = isLoggedIn ? '/video' : '/'
 
   return (
     <header className={`top-nav${showGuestHeader ? ' top-nav--guest' : ''}`}>
       <div className="top-nav__brand">
         <img className="top-nav__logo" src="/favicon.png" alt="" aria-hidden="true" />
-        <NavLink className="top-nav__title" to="/video">
+        <NavLink className="top-nav__title" to={homePath}>
           DoobleAI
         </NavLink>
       </div>

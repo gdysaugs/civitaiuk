@@ -211,6 +211,7 @@ export function Purchase() {
     if (!supabase) return
     try {
       await supabase.auth.signOut({ scope: 'local' })
+      window.location.assign('/')
     } catch (error) {
       setAuthStatus('error')
       setAuthMessage(error instanceof Error ? error.message : 'ログアウトに失敗しました。')

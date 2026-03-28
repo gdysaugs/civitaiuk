@@ -7,7 +7,7 @@
   type ChangeEvent,
   type CSSProperties,
 } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabaseClient'
 import { buildPromptWithQualityTags } from '../lib/qualityPrompt'
@@ -16,21 +16,70 @@ import { TopNav } from '../components/TopNav'
 import './camera.css'
 import './video-studio.css'
 
-const API_ENDPOINT = '/api/wan'
+type VideoModel = 'v0' | 'v1' | 'v2' | 'v3' | 'v4'
+type VideoModelConfig = {
+  id: VideoModel
+  label: 'V0' | 'V1' | 'V2' | 'V3' | 'V4'
+  endpoint: string
+  engine?: 'rapid' | 'smoothmix' | 'remix' | 'rapid_fastmove'
+  description: string
+}
+
+const VIDEO_MODELS: Record<VideoModel, VideoModelConfig> = {
+  v0: {
+    id: 'v0',
+    label: 'V0',
+    endpoint: '/api/wan',
+    description: 'Default i2v model endpoint.',
+  },
+  v1: {
+    id: 'v1',
+    label: 'V1',
+    endpoint: '/api/wan-rapid',
+    engine: 'rapid',
+    description: 'Strong for dynamic motion and scene changes.',
+  },
+  v2: {
+    id: 'v2',
+    label: 'V2',
+    endpoint: '/api/wan-smoothmix',
+    engine: 'smoothmix',
+    description: 'Stable and smooth natural motion rendering.',
+  },
+  v3: {
+    id: 'v3',
+    label: 'V3',
+    endpoint: '/api/wan-remix',
+    engine: 'remix',
+    description: 'Stronger cinematic style and prompt flexibility.',
+  },
+  v4: {
+    id: 'v4',
+    label: 'V4',
+    endpoint: '/api/wan-rapid-fastmove',
+    engine: 'rapid_fastmove',
+    description: 'High-detail and stable quality output.',
+  },
+}
+const VIDEO_MODEL_ORDER: readonly VideoModel[] = ['v0', 'v1', 'v2', 'v3', 'v4']
+const DEFAULT_VIDEO_MODEL: VideoModel = 'v4'
+const parseVideoModel = (value: string | null): VideoModel =>
+  value && value.toLowerCase() in VIDEO_MODELS ? (value.toLowerCase() as VideoModel) : DEFAULT_VIDEO_MODEL
+
 const FIXED_STEPS = 4
 const FIXED_CFG = 1
 const FIXED_FPS = 10
 const VIDEO_LENGTH_OPTIONS = [
-  { seconds: 5, frames: 53, ticketCost: 1, label: '5秒（1トークン）' },
-  { seconds: 7, frames: 73, ticketCost: 3, label: '7秒（3トークン）' },
-  { seconds: 9, frames: 93, ticketCost: 5, label: '9秒（5トークン）' },
+  { seconds: 6, frames: 61, ticketCost: 2, label: '6s (2 tokens)' },
+  { seconds: 8, frames: 81, ticketCost: 3, label: '8s (3 tokens)' },
+  { seconds: 10, frames: 101, ticketCost: 4, label: '10s (4 tokens)' },
 ] as const
 const DEFAULT_VIDEO_LENGTH_SECONDS = VIDEO_LENGTH_OPTIONS[0].seconds
 const resolveVideoLengthOption = (seconds: number) =>
   VIDEO_LENGTH_OPTIONS.find((option) => option.seconds === seconds) ?? VIDEO_LENGTH_OPTIONS[0]
 const GUEST_PROMO_IMAGE = '/media/guest-hero/guest-source.png'
 const GUEST_PROMO_VIDEO = '/media/guest-hero/guest-demo.mp4'
-const GUEST_PROMPT_EXAMPLE = '女性がペンを咥える'
+const GUEST_PROMPT_EXAMPLE = 'woman holding a pen with her lips'
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -215,8 +264,11 @@ export function Video() {
   const [isSavingResult, setIsSavingResult] = useState(false)
   const runIdRef = useRef(0)
   const navigate = useNavigate()
+  const location = useLocation()
+  const [videoModel, setVideoModel] = useState<VideoModel>(DEFAULT_VIDEO_MODEL)
 
   const accessToken = session?.access_token ?? ''
+  const selectedVideoModel = VIDEO_MODELS[videoModel] ?? VIDEO_MODELS[DEFAULT_VIDEO_MODEL]
   const selectedVideoLength = useMemo(() => resolveVideoLengthOption(videoLengthSeconds), [videoLengthSeconds])
   const requiredTickets = selectedVideoLength.ticketCost
   const canGenerate = Boolean(sourcePayload && !isRunning && session)
@@ -305,6 +357,11 @@ export function Video() {
     void fetchTickets(accessToken)
   }, [accessToken, fetchTickets, session])
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    setVideoModel(parseVideoModel(params.get('model')))
+  }, [location.search])
+
   const submitVideo = useCallback(
     async (imagePayload: string, token: string) => {
       if (!imagePayload) throw new Error('画像が必要です。')
@@ -327,13 +384,16 @@ export function Video() {
         image_name: sourceName || 'input.png',
       }
       input.image_base64 = imagePayload
+      if (selectedVideoModel.engine) {
+        input.engine = selectedVideoModel.engine
+      }
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (token) {
         headers.Authorization = `Bearer ${token}`
       }
 
-      const res = await fetch(API_ENDPOINT, {
+      const res = await fetch(selectedVideoModel.endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify({ input }),
@@ -366,7 +426,7 @@ export function Video() {
       if (!jobId) throw new Error('ジョブIDを取得できませんでした。')
       return { jobId }
     },
-    [height, negativePrompt, prompt, qualityTagsEnabled, selectedVideoLength, sourceName, width],
+    [height, negativePrompt, prompt, qualityTagsEnabled, selectedVideoLength, selectedVideoModel, sourceName, width],
   )
 
   const pollJob = useCallback(async (jobId: string, runId: number, token?: string) => {
@@ -383,7 +443,7 @@ export function Video() {
         mode: 'i2v',
         seconds: String(selectedVideoLength.seconds),
       })
-      const res = await fetch(`${API_ENDPOINT}?${params.toString()}`, { headers })
+      const res = await fetch(`${selectedVideoModel.endpoint}?${params.toString()}`, { headers })
       const data = await res.json().catch(() => ({}))
 
       if (!res.ok) {
@@ -418,7 +478,7 @@ export function Video() {
     }
 
     throw new Error('生成がタイムアウトしました。')
-  }, [selectedVideoLength.seconds])
+  }, [selectedVideoLength.seconds, selectedVideoModel])
 
   const startGeneration = useCallback(
     async (imagePayload: string) => {
@@ -626,6 +686,29 @@ export function Video() {
               </div>
             </div>
 
+            <div className="studio-duration-row">
+              <span>Model</span>
+              <div className="studio-duration-options" role="radiogroup" aria-label="Model">
+                {VIDEO_MODEL_ORDER.map((modelId) => {
+                  const model = VIDEO_MODELS[modelId]
+                  return (
+                    <button
+                      key={model.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={videoModel === model.id}
+                      className={`studio-duration-option${videoModel === model.id ? ' is-active' : ''}`}
+                      onClick={() => setVideoModel(model.id)}
+                      disabled={isRunning}
+                    >
+                      {model.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <p style={{ margin: '0 0 10px', fontSize: '0.85rem', color: '#a8b0d0' }}>{selectedVideoModel.description}</p>
+
             <div className="studio-toggle-row">
               <span>品質タグ(有効にすると高画質化タグを内部で埋め込みます)</span>
               <button
@@ -717,7 +800,7 @@ export function Video() {
                 </div>
                 <div className="studio-guest-promo__prompt">{`プロンプト例: 「${GUEST_PROMPT_EXAMPLE}」`}</div>
                 <ul className="studio-guest-promo__highlights">
-                  <li>動画生成は5秒・7秒・9秒から選べる</li>
+                  <li>動画生成は6秒・8秒・10秒から選べる</li>
                   <li>圧倒的高画質</li>
                   <li>独自開発した最先端モデル</li>
                 </ul>
