@@ -32,6 +32,10 @@ const PACKAGES = [
   },
 ] as const
 
+type PackageOption = (typeof PACKAGES)[number]
+
+const PENDING_CHECKOUT_KEY = 'civitaiuk_pending_checkout_package'
+
 const parseApiJson = async (response: Response) => {
   const value = await response.json().catch(() => ({}))
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -69,8 +73,11 @@ export function PurchasePage({
     }
   }, [refreshTickets])
 
-  const startCheckout = async () => {
+  const startCheckout = async (targetPackage: PackageOption = selectedPackage) => {
+    if (isLoading) return
+    setSelectedPackageId(targetPackage.id)
     if (!session) {
+      window.sessionStorage.setItem(PENDING_CHECKOUT_KEY, targetPackage.id)
       await login()
       return
     }
@@ -83,7 +90,7 @@ export function PurchasePage({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ packageId: selectedPackage.id }),
+        body: JSON.stringify({ packageId: targetPackage.id }),
       })
       const data = await parseApiJson(response)
       if (!response.ok || typeof data.url !== 'string') {
@@ -95,6 +102,20 @@ export function PurchasePage({
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!session || !configReady || isLoading) return
+
+    const pendingPackageId = window.sessionStorage.getItem(PENDING_CHECKOUT_KEY)
+    const pendingPackage = PACKAGES.find((item) => item.id === pendingPackageId)
+    if (!pendingPackage) {
+      if (pendingPackageId) window.sessionStorage.removeItem(PENDING_CHECKOUT_KEY)
+      return
+    }
+
+    window.sessionStorage.removeItem(PENDING_CHECKOUT_KEY)
+    void startCheckout(pendingPackage)
+  }, [configReady, isLoading, session])
 
   return (
     <div className="app purchase-app">
@@ -138,7 +159,11 @@ export function PurchasePage({
                 key={item.id}
                 type="button"
                 className={`package-card${selectedPackage.id === item.id ? ' is-active' : ''}`}
-                onClick={() => setSelectedPackageId(item.id)}
+                onClick={() => {
+                  void startCheckout(item)
+                }}
+                disabled={isLoading || !configReady}
+                aria-label={`${item.name} ${item.tokens}トークン ${item.price}で購入`}
               >
                 <span>{item.name}</span>
                 <strong>{item.tokens}トークン</strong>
@@ -146,15 +171,6 @@ export function PurchasePage({
               </button>
             ))}
           </div>
-
-          <button
-            type="button"
-            className="button button--primary button--checkout"
-            onClick={startCheckout}
-            disabled={isLoading || !configReady}
-          >
-            {session ? (isLoading ? '作成中...' : `${selectedPackage.price}で購入`) : 'Googleログインして購入'}
-          </button>
 
           <div className="purchase-status">
             <p>{status || message}</p>

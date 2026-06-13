@@ -452,6 +452,15 @@ button {
   transform: translateY(-1px);
 }
 
+.package-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.package-card:disabled:hover {
+  transform: none;
+}
+
 .package-card span {
   color: var(--cyan);
   font-size: 0.8rem;
@@ -478,12 +487,6 @@ button {
   color: #c9cbdd;
   font-size: 0.86rem;
   line-height: 1.55;
-}
-
-.button--checkout {
-  width: 100%;
-  min-height: 58px;
-  font-size: 1rem;
 }
 
 .purchase-status {
