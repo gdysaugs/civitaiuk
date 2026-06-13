@@ -392,13 +392,13 @@ export function App() {
     if (!client) return
     client.auth.getSession().then(({ data }) => {
       setSession(data.session ?? null)
-      setMessage(data.session ? 'トークンを確認しています。' : 'Googleログインするとプレイできます。')
+      setMessage(data.session ? 'トークンを確認しています。' : 'Sparkアカウントでログインしたら購入できます')
     })
     const {
       data: { subscription },
     } = client.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession)
-      setMessage(nextSession ? 'トークンを確認しています。' : 'Googleログインするとプレイできます。')
+      setMessage(nextSession ? 'トークンを確認しています。' : 'Sparkアカウントでログインしたら購入できます')
       if (!nextSession) setTickets(null)
     })
     return () => subscription.unsubscribe()
