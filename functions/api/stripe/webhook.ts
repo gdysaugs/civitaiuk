@@ -1,173 +1,136 @@
-import { createClient } from '@supabase/supabase-js'
+import { getAdminClient, grantPurchasedTickets, type Env } from '../../_shared/supabase'
 
-type Env = {
-  SUPABASE_URL?: string
-  SUPABASE_SERVICE_ROLE_KEY?: string
-  STRIPE_WEBHOOK_SECRET?: string
-  STRIPE_WEBHOOK_SIGNING_SECRET?: string
-  STRIPE_SIGNING_SECRET?: string
+type StripeCheckoutSession = {
+  id?: string
+  payment_status?: string
+  amount_total?: number
+  currency?: string
+  customer_email?: string
+  metadata?: Record<string, string | undefined>
 }
 
-const DOOBLE_PRICE_MAP = new Map([
-  ['price_1TCz5nA9KcmC9XImyo6sNLGa', { label: 'Starter', tickets: 25 }],
-  ['price_1TCz67A9KcmC9XImBOK1rmiV', { label: 'Basic', tickets: 80 }],
-  ['price_1TCz6MA9KcmC9XImMNMlFeGO', { label: 'Plus', tickets: 220 }],
-  ['price_1TCz6iA9KcmC9XImkYYhJeQR', { label: 'Pro', tickets: 900 }],
-])
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Stripe-Signature',
-}
-
-const jsonResponse = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
-
-const getSupabaseAdmin = (env: Env) => {
-  const url = env.SUPABASE_URL
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !serviceKey) return null
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-}
-
-const resolveStripeWebhookSecret = (env: Env) => {
-  const candidates = [env.STRIPE_WEBHOOK_SECRET, env.STRIPE_WEBHOOK_SIGNING_SECRET, env.STRIPE_SIGNING_SECRET]
-  for (const value of candidates) {
-    const normalized = String(value ?? '').trim()
-    if (normalized) return normalized
+type StripeEvent = {
+  id?: string
+  type?: string
+  data?: {
+    object?: unknown
   }
-  return ''
 }
 
-const textEncoder = new TextEncoder()
+const encoder = new TextEncoder()
 
 const toHex = (buffer: ArrayBuffer) =>
-  Array.from(new Uint8Array(buffer))
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('')
+  [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 
-const timingSafeEqual = (a: string, b: string) => {
-  if (a.length !== b.length) return false
+const constantTimeEqual = (left: string, right: string) => {
+  if (left.length !== right.length) return false
   let diff = 0
-  for (let i = 0; i < a.length; i += 1) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= left.charCodeAt(i) ^ right.charCodeAt(i)
   }
   return diff === 0
 }
 
-const verifyStripeSignature = async (payload: string, signature: string, secret: string) => {
-  const parts = signature.split(',').map((item) => item.trim())
-  const timestampPart = parts.find((item) => item.startsWith('t='))
-  const v1Parts = parts.filter((item) => item.startsWith('v1='))
-  if (!timestampPart || v1Parts.length === 0) return false
-  const timestamp = timestampPart.slice(2)
-  const signedPayload = `${timestamp}.${payload}`
+const hmacSha256 = async (secret: string, payload: string) => {
   const key = await crypto.subtle.importKey(
     'raw',
-    textEncoder.encode(secret),
+    encoder.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   )
-  const signatureBuffer = await crypto.subtle.sign('HMAC', key, textEncoder.encode(signedPayload))
-  const expected = toHex(signatureBuffer)
-  return v1Parts.some((part) => timingSafeEqual(part.slice(3), expected))
+  return toHex(await crypto.subtle.sign('HMAC', key, encoder.encode(payload)))
 }
 
-export const onRequestOptions: PagesFunction = async () => new Response(null, { headers: corsHeaders })
+const verifyStripeSignature = async (rawBody: string, signatureHeader: string, secret: string) => {
+  const parts = signatureHeader.split(',').map((part) => part.trim())
+  const timestamp = parts.find((part) => part.startsWith('t='))?.slice(2)
+  const signatures = parts.filter((part) => part.startsWith('v1=')).map((part) => part.slice(3))
+  if (!timestamp || signatures.length === 0) return false
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const secret = resolveStripeWebhookSecret(env)
-  if (!secret) {
-    return jsonResponse({ error: 'STRIPE_WEBHOOK_SECRET is not set.' }, 500)
-  }
+  const timestampMs = Number(timestamp) * 1000
+  if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 60 * 1000) return false
 
-  const signature = request.headers.get('stripe-signature') || ''
-  const body = await request.text()
-  const isValid = await verifyStripeSignature(body, signature, secret)
-  if (!isValid) {
-    return jsonResponse({ error: 'Invalid signature.' }, 401)
-  }
+  const expected = await hmacSha256(secret, `${timestamp}.${rawBody}`)
+  return signatures.some((signature) => constantTimeEqual(signature, expected))
+}
 
-  const event = body ? JSON.parse(body) : null
-  if (!event?.type) {
-    return jsonResponse({ error: 'Invalid event payload.' }, 400)
-  }
-
-  if (event.type !== 'checkout.session.completed') {
-    return jsonResponse({ received: true })
-  }
-
-  const session = event.data?.object ?? {}
-  if (session.payment_status && session.payment_status !== 'paid') {
-    return jsonResponse({ received: true })
-  }
-
-  const appTag = String(session.metadata?.app ?? '')
-  if (appTag !== 'dooble') {
-    return jsonResponse({ received: true })
-  }
-
-  const priceId = String(session.metadata?.price_id ?? '')
-  const plan = DOOBLE_PRICE_MAP.get(priceId)
-  if (!priceId || !plan) {
-    return jsonResponse({ received: true })
-  }
-
-  const tickets = plan.tickets
-  const email = String(session.metadata?.email ?? session.customer_details?.email ?? '')
-  const userId = String(session.metadata?.user_id ?? session.client_reference_id ?? '')
-  const usageId = String(event.id ?? session.id ?? '')
-  const stripeCustomerId = session.customer ? String(session.customer) : null
-
-  if (!tickets || !email || !userId || !usageId) {
-    return jsonResponse({ error: 'Missing metadata.' }, 400)
-  }
-
-  const admin = getSupabaseAdmin(env)
-  if (!admin) {
-    return jsonResponse({ error: 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set.' }, 500)
-  }
-
-  const { data: userCheck, error: userCheckError } = await admin.auth.admin.getUserById(userId)
-  if (userCheckError || !userCheck?.user) {
-    return jsonResponse({ received: true })
-  }
-
-  const { data: rpcData, error: rpcError } = await admin.rpc('grant_tickets', {
-    p_usage_id: usageId,
-    p_user_id: userId,
-    p_email: email,
-    p_amount: tickets,
-    p_reason: 'stripe_purchase',
-    p_metadata: {
-      price_id: priceId,
-      plan_label: plan.label,
-      metadata_tickets: session.metadata?.tickets ?? null,
-      session_id: session.id ?? null,
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
     },
-    p_stripe_customer_id: stripeCustomerId,
   })
 
-  if (rpcError) {
-    const message = rpcError.message ?? 'Failed to grant tickets.'
-    if (message.includes('INVALID')) {
-      return jsonResponse({ error: message }, 400)
-    }
-    return jsonResponse({ error: message }, 500)
-  }
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value))
 
-  const result = Array.isArray(rpcData) ? rpcData[0] : rpcData
-  if (result?.already_processed) {
-    return jsonResponse({ received: true, duplicate: true })
-  }
-
-  return jsonResponse({ received: true })
+const asCheckoutSession = (value: unknown): StripeCheckoutSession | null => {
+  if (!isObject(value)) return null
+  return value as StripeCheckoutSession
 }
 
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    return json({ error: 'Webhook secret is not configured.' }, 500)
+  }
+
+  const rawBody = await request.text()
+  const signature = request.headers.get('Stripe-Signature') || ''
+  const verified = await verifyStripeSignature(rawBody, signature, env.STRIPE_WEBHOOK_SECRET)
+  if (!verified) {
+    return json({ error: 'Invalid signature.' }, 400)
+  }
+
+  const event = JSON.parse(rawBody) as StripeEvent
+  if (event.type !== 'checkout.session.completed') {
+    return json({ received: true })
+  }
+
+  const session = asCheckoutSession(event.data?.object)
+  if (!session?.id) {
+    return json({ error: 'Invalid checkout session.' }, 400)
+  }
+
+  if (session.payment_status && session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+    return json({ received: true, skipped: 'payment_not_paid' })
+  }
+
+  const metadata = session.metadata ?? {}
+  const userId = metadata.user_id ?? ''
+  const email = metadata.email ?? session.customer_email ?? ''
+  const tokens = Number(metadata.tokens ?? 0)
+
+  const admin = getAdminClient(env)
+  if (!admin) {
+    return json({ error: 'Supabase is not configured.' }, 500)
+  }
+
+  const grant = await grantPurchasedTickets(admin, {
+    usageId: `stripe_checkout:${session.id}`,
+    userId,
+    email,
+    amount: tokens,
+    metadata: {
+      site: 'civitai.uk',
+      stripe_event_id: event.id ?? null,
+      stripe_checkout_session_id: session.id,
+      package_id: metadata.package_id ?? null,
+      amount_total: session.amount_total ?? null,
+      currency: session.currency ?? null,
+    },
+  })
+
+  if (grant.error || !grant.data) {
+    console.error('[stripe-webhook] grant failed', grant.error)
+    return json({ error: 'Grant failed.' }, 500)
+  }
+
+  return json({
+    received: true,
+    tickets: grant.data.tickets,
+    alreadyProcessed: grant.data.alreadyProcessed,
+  })
+}

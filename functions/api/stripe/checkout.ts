@@ -1,182 +1,94 @@
-import { createClient, type User } from '@supabase/supabase-js'
-import { buildCorsHeaders, isCorsBlocked } from '../../_shared/cors'
+import { jsonResponse, optionsResponse, requireGoogleUser, type Env } from '../../_shared/supabase'
 
-type Env = {
-  SUPABASE_URL?: string
-  SUPABASE_SERVICE_ROLE_KEY?: string
-  STRIPE_SECRET_KEY?: string
-  STRIPE_API_KEY?: string
-  STRIPE_LIVE_SECRET_KEY?: string
-  STRIPE_KEY?: string
-  STRIPE_SUCCESS_URL?: string
-  STRIPE_CANCEL_URL?: string
+const PACKAGES = {
+  starter: {
+    id: 'starter',
+    name: '30トークン',
+    tokens: 30,
+    priceId: 'price_1Thp2qPPWL4VKmsegxuHcCrm',
+  },
+  standard: {
+    id: 'standard',
+    name: '110トークン',
+    tokens: 110,
+    priceId: 'price_1Thp39PPWL4VKmsecnlqXsOz',
+  },
+  premium: {
+    id: 'premium',
+    name: '280トークン',
+    tokens: 280,
+    priceId: 'price_1Thp3PPPWL4VKmseiOl26yT4',
+  },
+} as const
+
+type PackageId = keyof typeof PACKAGES
+
+const getPackage = (packageId: unknown) => {
+  if (typeof packageId !== 'string') return null
+  return PACKAGES[packageId as PackageId] ?? null
 }
 
-const corsMethods = 'POST, OPTIONS'
-
-const jsonResponse = (body: unknown, status = 200, headers: HeadersInit = {}) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...headers, 'Content-Type': 'application/json' },
-  })
-
-const parseJsonSafely = (text: string) => {
-  if (!text) return null
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
+const parseJson = async (request: Request) => {
+  const value = await request.json().catch(() => ({}))
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
-const resolveStripeSecretKey = (env: Env) => {
-  const candidates = [env.STRIPE_SECRET_KEY, env.STRIPE_API_KEY, env.STRIPE_LIVE_SECRET_KEY, env.STRIPE_KEY]
-  for (const value of candidates) {
-    const normalized = String(value ?? '').trim()
-    if (normalized) return normalized
-  }
-  return ''
-}
-
-const extractBearerToken = (request: Request) => {
-  const header = request.headers.get('Authorization') || ''
-  const match = header.match(/Bearer\s+(.+)/i)
-  return match ? match[1] : ''
-}
-
-const getSupabaseAdmin = (env: Env) => {
-  const url = env.SUPABASE_URL
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !serviceKey) return null
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-}
-
-const isGoogleUser = (user: User) => {
-  if (user.app_metadata?.provider === 'google') return true
-  if (Array.isArray(user.identities)) {
-    return user.identities.some((identity) => identity.provider === 'google')
-  }
-  return false
-}
-
-const requireGoogleUser = async (request: Request, env: Env, corsHeaders: HeadersInit) => {
-  const token = extractBearerToken(request)
-  if (!token) {
-    return { response: jsonResponse({ error: 'ログインが必要です。' }, 401, corsHeaders) }
-  }
-  const admin = getSupabaseAdmin(env)
-  if (!admin) {
-    return { response: jsonResponse({ error: 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set.' }, 500, corsHeaders) }
-  }
-  const { data, error } = await admin.auth.getUser(token)
-  if (error || !data?.user) {
-    return { response: jsonResponse({ error: '認証に失敗しました。' }, 401, corsHeaders) }
-  }
-  if (!isGoogleUser(data.user)) {
-    return { response: jsonResponse({ error: 'Googleログインのみ利用できます。' }, 403, corsHeaders) }
-  }
-  return { admin, user: data.user }
-}
-
-const PRICE_MAP = new Map([
-  ['price_1TCz5nA9KcmC9XImyo6sNLGa', { label: 'Starter', tickets: 25 }],
-  ['price_1TCz67A9KcmC9XImBOK1rmiV', { label: 'Basic', tickets: 80 }],
-  ['price_1TCz6MA9KcmC9XImMNMlFeGO', { label: 'Plus', tickets: 220 }],
-  ['price_1TCz6iA9KcmC9XImkYYhJeQR', { label: 'Pro', tickets: 900 }],
-])
-
-const getRedirectUrl = (env: Env, request: Request, key: 'STRIPE_SUCCESS_URL' | 'STRIPE_CANCEL_URL', fallback: string) =>
-  env[key] ?? new URL(fallback, request.url).toString()
-
-export const onRequestOptions: PagesFunction<Env> = async ({ request, env }) => {
-  const corsHeaders = buildCorsHeaders(request, env, corsMethods)
-  if (isCorsBlocked(request, env)) {
-    return new Response(null, { status: 403, headers: corsHeaders })
-  }
-  return new Response(null, { headers: corsHeaders })
-}
+export const onRequestOptions: PagesFunction<Env> = async ({ request }) => optionsResponse(request)
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const corsHeaders = buildCorsHeaders(request, env, corsMethods)
-  if (isCorsBlocked(request, env)) {
-    return new Response(null, { status: 403, headers: corsHeaders })
+  const auth = await requireGoogleUser(request, env)
+  if ('response' in auth) return auth.response
+
+  if (!env.STRIPE_SECRET_KEY) {
+    return jsonResponse(request, { error: 'Stripe設定が未完了です。' }, 500)
   }
 
-  const auth = await requireGoogleUser(request, env, corsHeaders)
-  if ('response' in auth) {
-    return auth.response
+  const body = await parseJson(request)
+  const selected = getPackage(body.packageId)
+  if (!selected) {
+    return jsonResponse(request, { error: '購入プランを選択してください。' }, 400)
   }
 
-  const stripeKey = resolveStripeSecretKey(env)
-  if (!stripeKey) {
-    return jsonResponse(
-      { error: 'Stripe秘密鍵が未設定です。STRIPE_SECRET_KEY（または STRIPE_API_KEY）を設定してください。' },
-      500,
-      corsHeaders,
-    )
-  }
-
-  const payload = await request.json().catch(() => null)
-  if (!payload) {
-    return jsonResponse({ error: 'Invalid request body.' }, 400, corsHeaders)
-  }
-
-  const priceId = String(payload.price_id ?? payload.priceId ?? '')
-  const plan = PRICE_MAP.get(priceId)
-  if (!plan) {
-    return jsonResponse({ error: '不正なプランです。' }, 400, corsHeaders)
-  }
-
-  const email = auth.user.email ?? ''
-  const successUrl = getRedirectUrl(env, request, 'STRIPE_SUCCESS_URL', '/?checkout=success')
-  const cancelUrl = getRedirectUrl(env, request, 'STRIPE_CANCEL_URL', '/?checkout=cancel')
-
+  const origin = new URL(request.url).origin
   const params = new URLSearchParams()
   params.set('mode', 'payment')
-  params.set('success_url', successUrl)
-  params.set('cancel_url', cancelUrl)
-  params.set('line_items[0][price]', priceId)
-  params.set('line_items[0][quantity]', '1')
+  params.set('success_url', `${origin}/purchage?checkout=success&session_id={CHECKOUT_SESSION_ID}`)
+  params.set('cancel_url', `${origin}/purchage?checkout=cancel`)
   params.set('client_reference_id', auth.user.id)
-  if (email) {
-    params.set('customer_email', email)
-  }
+  params.set('customer_email', auth.user.email ?? '')
+  params.set('allow_promotion_codes', 'true')
+  params.set('line_items[0][quantity]', '1')
+  params.set('line_items[0][price]', selected.priceId)
+  params.set('metadata[site]', 'civitai.uk')
+  params.set('metadata[package_id]', selected.id)
+  params.set('metadata[price_id]', selected.priceId)
   params.set('metadata[user_id]', auth.user.id)
-  params.set('metadata[email]', email)
-  params.set('metadata[tickets]', String(plan.tickets))
-  params.set('metadata[price_id]', priceId)
-  params.set('metadata[plan_label]', plan.label)
-  params.set('metadata[app]', 'dooble')
-  params.set('payment_intent_data[statement_descriptor]', 'AIDOOBLE')
+  params.set('metadata[email]', auth.user.email ?? '')
+  params.set('metadata[tokens]', String(selected.tokens))
+  params.set('payment_intent_data[metadata][site]', 'civitai.uk')
+  params.set('payment_intent_data[metadata][package_id]', selected.id)
+  params.set('payment_intent_data[metadata][price_id]', selected.priceId)
+  params.set('payment_intent_data[metadata][user_id]', auth.user.id)
+  params.set('payment_intent_data[metadata][email]', auth.user.email ?? '')
+  params.set('payment_intent_data[metadata][tokens]', String(selected.tokens))
 
-  let stripeRes: Response
-  try {
-    stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${stripeKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params.toString(),
+  const stripeResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
+  })
+
+  const stripeData = (await stripeResponse.json().catch(() => ({}))) as Record<string, unknown>
+  if (!stripeResponse.ok || typeof stripeData.url !== 'string') {
+    console.error('[stripe-checkout] failed', {
+      status: stripeResponse.status,
+      error: stripeData.error,
     })
-  } catch {
-    return jsonResponse({ error: 'Stripe APIへの接続に失敗しました。' }, 502, corsHeaders)
+    return jsonResponse(request, { error: '購入ページの作成に失敗しました。' }, 500)
   }
 
-  const stripeText = await stripeRes.text()
-  const stripeData = parseJsonSafely(stripeText)
-  if (!stripeRes.ok) {
-    const stripeMessage =
-      (stripeData as any)?.error?.message ||
-      (typeof stripeText === 'string' && stripeText.trim() ? stripeText.trim().slice(0, 300) : '')
-    return jsonResponse({ error: stripeMessage || 'Stripeのセッション作成に失敗しました。' }, 500, corsHeaders)
-  }
-  const checkoutUrl = typeof (stripeData as any)?.url === 'string' ? (stripeData as any).url : ''
-  if (!checkoutUrl) {
-    return jsonResponse({ error: 'StripeセッションURLの取得に失敗しました。' }, 500, corsHeaders)
-  }
-
-  return jsonResponse({ url: checkoutUrl }, 200, corsHeaders)
+  return jsonResponse(request, { url: stripeData.url })
 }

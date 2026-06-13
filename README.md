@@ -1,63 +1,38 @@
-# civitaiuk
+# Civitai UK
 
-AI video app (I2V / Animate) running on **Cloudflare Pages + Pages Functions**.
+Token Invaders for `civitai.uk`.
 
-Official URL: https://civitai.uk
+## Commands
 
-## Architecture
-
-- Frontend: Vite (`dist`)
-- Backend API: `functions/api/*.ts` (Cloudflare Pages Functions)
-- Video generation: Runpod Serverless (called from Pages Functions)
-- Cloudflare Worker deploy: **not used**
-
-## Local Setup
-
-1. Install dependencies
-```bash
+```sh
 npm install
-```
-
-2. Create local vars (`.dev.vars`)
-```env
-RUNPOD_API_KEY=...
-RUNPOD_WAN_ENDPOINT_URL=https://api.runpod.ai/v2/<endpoint-id>
-SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...
-```
-
-3. Run app
-```bash
-npm run dev
-```
-
-## Cloudflare Pages
-
-Build command:
-```bash
 npm run build
+npm run functions:build
+npm run deploy
 ```
 
-Output directory:
-```bash
-dist
-```
+## Runtime
 
-Deploy example:
-```bash
-npx wrangler pages deploy dist --project-name civitaiuk --branch main
-```
+Cloudflare Pages project: `civitaiuk`
 
-## Required Pages Environment Variables
+Required production secrets:
 
-- `RUNPOD_API_KEY`
-- `RUNPOD_WAN_ENDPOINT_URL`
 - `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-
-Optional:
-- `CORS_ALLOWED_ORIGINS`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_SUCCESS_URL`
-- `STRIPE_CANCEL_URL`
+
+The app uses the shared `user_tickets` and `ticket_events` tables. One play costs one token.
+
+Stripe webhook URL:
+
+```txt
+https://civitai.uk/api/stripe/webhook
+```
+
+Webhook event:
+
+```txt
+checkout.session.completed
+```
