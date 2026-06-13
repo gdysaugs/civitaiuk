@@ -73,6 +73,21 @@ export function PurchasePage({
     }
   }, [refreshTickets])
 
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return
+
+      setIsLoading(false)
+      const checkoutStatus = new URLSearchParams(window.location.search).get('checkout')
+      if (!checkoutStatus) {
+        setStatus('購入を再開するにはプランを選択してください。')
+      }
+    }
+
+    window.addEventListener('pageshow', handlePageShow)
+    return () => window.removeEventListener('pageshow', handlePageShow)
+  }, [])
+
   const startCheckout = async (targetPackage: PackageOption = selectedPackage) => {
     if (isLoading) return
     setSelectedPackageId(targetPackage.id)
